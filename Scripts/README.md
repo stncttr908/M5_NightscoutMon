@@ -68,8 +68,7 @@ the M5 groups — which means a release build requires the
 **"GFX Library for Arduino" (Arduino_GFX) 1.6.0** library (1.6.1 is reported broken with
 its AXS15231B panel). `Scripts\setup.bat` installs it at exactly that version.
 
-**WS_TouchLCD35 is not yet part of `-Target All`** (`SkipInAll`) until it has been validated on
-hardware — build it explicitly with `-Target WS_TouchLCD35`. It needs no extra library: the
+**WS_TouchLCD35** is part of `-Target All` (hardware-validated August 2026). It needs no extra library: the
 ST7796 panel, backlight and FT6336 touch are driven by M5GFX's bundled LovyanGFX classes. It
 reuses the `m5stack-fire` board definition purely for its 16 MB / `default_16MB` OTA layout (all
 pins are set explicitly by the shim); PSRAM must be on because the UI and frame sprites live there.

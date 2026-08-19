@@ -24,8 +24,7 @@
       WS_TouchLCD35 - Waveshare ESP32-Touch-LCD-3.5 (non-M5 classic ESP32, 16 MB,
                    2 MB PSRAM, ST7796 SPI panel): M5Unified swapped for the
                    hal_ws_touchlcd35 shim via -DDEVICE_WS_TOUCH_LCD_35. Drawn with
-                   M5GFX only (no extra library). Not part of 'All' until
-                   hardware-validated.
+                   M5GFX only (no extra library).
 
     Board sub-variants (AXP192/AXP2101 PMU, IMU, RTC, touch) are auto-detected by
     M5Unified at runtime, so no further binaries are needed.
@@ -95,9 +94,8 @@ $Targets = [ordered]@{
     # Non-M5 board on a classic ESP32 (16 MB flash, 2 MB in-package PSRAM): the m5stack-fire
     # FQBN (generic ESP32 + 16 MB + default_16MB OTA partitions, pins are all set explicitly
     # by the shim) + the DEVICE define that swaps M5Unified for the hal_ws_touchlcd35 shim. PSRAM
-    # must be on (UI + frame sprites live there). Excluded from 'All' until validated on
-    # hardware - build it explicitly with -Target WS_TouchLCD35.
-    'WS_TouchLCD35' = @{ Fqbn = 'esp32:esp32:m5stack-fire:PartitionScheme=default,PSRAM=enabled'; Folder = 'WS_TouchLCD35'; Desc = 'Waveshare ESP32-Touch-LCD-3.5 (ESP32, 16MB)'; Extra = '-DDEVICE_WS_TOUCH_LCD_35'; SkipInAll = $true }
+    # must be on (UI + frame sprites live there). Hardware-validated August 2026.
+    'WS_TouchLCD35' = @{ Fqbn = 'esp32:esp32:m5stack-fire:PartitionScheme=default,PSRAM=enabled'; Folder = 'WS_TouchLCD35'; Desc = 'Waveshare ESP32-Touch-LCD-3.5 (ESP32, 16MB)'; Extra = '-DDEVICE_WS_TOUCH_LCD_35' }
 }
 
 # Common flag: matches the PlatformIO fix for the missing gpio_deep_sleep_hold_dis
