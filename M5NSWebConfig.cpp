@@ -62,6 +62,7 @@ static void persistConfigToDisk();
 
 static void pageHeadOpen(String& m, const char* extraMeta) {
   m += "<!DOCTYPE HTML>\r\n<html>\r\n<head>\r\n";
+  m += "<meta charset=\"utf-8\">\r\n";
   m += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\r\n";
   if (extraMeta && extraMeta[0]) m += extraMeta;
   m += "<style>\r\n";
@@ -395,7 +396,7 @@ void handleRoot() {
   message += "</details>\r\n";
 
   message += "</body>\r\n</html>\r\n";
-  w3srv.send(200, "text/html", message);
+  w3srv.send(200, "text/html; charset=utf-8", message);
 
   if(cfg.LED_strip_mode != 0) {
     pixels.show();
@@ -460,7 +461,7 @@ void handleFwCheck() {
   }
   message += "</p>\r\n<p><a href=\"/\">Back to configuration</a></p>\r\n";
   message += "</body>\r\n</html>\r\n";
-  w3srv.send(200, "text/html", message);
+  w3srv.send(200, "text/html; charset=utf-8", message);
 }
 
 // ---- On-device OTA (no browser needed) ------------------------------------------
@@ -598,7 +599,7 @@ void handleUpdate() {
     message += "<p>Device will restart automatically.</p>\r\n";
     message += "</body>\r\n";
     message += "</html>\r\n";
-    w3srv.send(200, "text/html", message);
+    w3srv.send(200, "text/html; charset=utf-8", message);
 
     M5.Lcd.println();
     M5.Lcd.println("Updating the firmware... ");
@@ -637,7 +638,7 @@ void handleUpdate() {
     message += " is current.</p>\r\n";
     message += "</body>\r\n";
     message += "</html>\r\n";
-    w3srv.send(200, "text/html", message);
+    w3srv.send(200, "text/html; charset=utf-8", message);
 
     Serial.println("Nothing to update");
     M5.Lcd.println();
@@ -690,7 +691,7 @@ void handleSwitchConfig() {
       message += sec; message += "\">Disable anyway</a>\r\n";
       message += "<a class=\"btn\" href=\"/?s="; message += sec; message += "\">Keep it enabled</a></p>\r\n";
       message += "</body>\r\n</html>\r\n";
-      w3srv.send(200, "text/html", message);
+      w3srv.send(200, "text/html; charset=utf-8", message);
       return;
     }
   }
@@ -894,7 +895,7 @@ void handleEditConfigItem() {
   message.reserve(2048);
   pageHeadOpen(message, NULL);
   message += "<p>Edit configuration item.</p>\r\n";
-  message += "<form action=\"/getedititem\" method=\"post\">\r\n";
+  message += "<form action=\"/getedititem\" method=\"post\" accept-charset=\"utf-8\">\r\n";
   message += "<input type=\"hidden\" name=\"s\" value=\""; message += sec; message += "\">\r\n";
   if(String(w3srv.argName(0)).equals("param")) {
     if(String(w3srv.arg(0)).equals("userName")) {
@@ -986,7 +987,7 @@ void handleEditConfigItem() {
   message += "</form>\r\n";
   message += "</body>\r\n";
   message += "</html>\r\n";
-  w3srv.send(200, "text/html", message);
+  w3srv.send(200, "text/html; charset=utf-8", message);
   if(cfg.LED_strip_mode != 0) {
     pixels.show();
   }
@@ -1187,7 +1188,7 @@ void handleGetEditConfigItem() {
 
   message += "</body>\r\n";
   message += "</html>\r\n";
-  w3srv.send(200, "text/html", message);
+  w3srv.send(200, "text/html; charset=utf-8", message);
 
   if (!cfg.is_task_bootstrapping) {
     M5.Lcd.fillScreen(BLACK);
@@ -1351,7 +1352,7 @@ void handleSaveConfig() {
 
   persistConfigToDisk();
 
-  w3srv.send(200, "text/html", message);
+  w3srv.send(200, "text/html; charset=utf-8", message);
   delay(100);
 
   if (cfg.is_task_bootstrapping) {
