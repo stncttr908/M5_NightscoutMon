@@ -18,6 +18,7 @@
 #include "M5NSDexcom.h"
 #include "M5NSLibre.h"
 #include "externs.h"
+#include "M5NSUdpSync.h"
 #include <esp32/rom/miniz.h>
 
 // OTA firmware is served straight from this repo (raw.githubusercontent.com, master
@@ -380,6 +381,7 @@ void handleRoot() {
   rowToggle(message, "MQTT enabled", cfg.mqtt_enabled, "mqtt_enabled", "mq");
   rowEdit(message, "Broker & credentials", (cfg.mqtt_server[0] != 0) ? (String(cfg.mqtt_server) + ":" + String(cfg.mqtt_port)) : String("(none)"), "mqtt", "mq");
   rowToggle(message, "Home Assistant discovery", cfg.mqtt_ha_discovery, "mqtt_ha_discovery", "mq");
+  rowToggle(message, "UDP LAN sync (snooze)", cfg.udp_sync_enabled, "udp_sync_enabled", "mq");
   message += "</details>\r\n";
 
   // ---- Hardware add-ons ----
@@ -905,6 +907,11 @@ void handleSwitchConfig() {
         if(haveVal) cfg.mqtt_ha_discovery = (val!=0);
         else cfg.mqtt_ha_discovery = !cfg.mqtt_ha_discovery;
       }
+      else if(param.equals("udp_sync_enabled")) {
+        if(haveVal) cfg.udp_sync_enabled = (val!=0);
+        else cfg.udp_sync_enabled = !cfg.udp_sync_enabled;
+        udpSyncInit();
+      }
     }
   }
 
@@ -1407,6 +1414,10 @@ static void persistConfigToDisk() {
     }
     dstFil.print("mqtt_topic_prefix = "); dstFil.print(cfg.mqtt_topic_prefix); dstFil.print("\r\n");
     dstFil.print("mqtt_ha_discovery = "); dstFil.print(cfg.mqtt_ha_discovery); dstFil.print("\r\n");
+    dstFil.print("\r\n");
+    dstFil.print("; UDP LAN Sync\r\n");
+    dstFil.print("udp_sync_enabled = "); dstFil.print(cfg.udp_sync_enabled); dstFil.print("\r\n");
+    dstFil.print("udp_sync_port = "); dstFil.print(cfg.udp_sync_port); dstFil.print("\r\n");
     dstFil.print("\r\n");
     for(int i=0; i<10; i++) {
       if(cfg.wlanssid[i][0] != 0) {

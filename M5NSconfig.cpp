@@ -142,6 +142,8 @@ void readConfigFromFlash(tConfig *cfg) {
     prefs.getString("mqtt_prefix", cfg->mqtt_topic_prefix, 64);
     if(strlen(cfg->mqtt_topic_prefix) == 0) strcpy(cfg->mqtt_topic_prefix, "m5ns");
     cfg->mqtt_ha_discovery = prefs.getInt("mqtt_ha_disc", 1);
+    cfg->udp_sync_enabled = prefs.getInt("udp_sync_en", 1);
+    cfg->udp_sync_port = prefs.getInt("udp_sync_port", 50555);
     char tmps[64];
     int wlans_defined_count = 0;
     for(int i=0; i<10; i++) {
@@ -242,6 +244,8 @@ void saveConfigToFlash(tConfig *cfg) {
     prefs.putString("mqtt_pass", cfg->mqtt_pass);
     prefs.putString("mqtt_prefix", cfg->mqtt_topic_prefix);
     prefs.putInt("mqtt_ha_disc", cfg->mqtt_ha_discovery);
+    prefs.putInt("udp_sync_en", cfg->udp_sync_enabled);
+    prefs.putInt("udp_sync_port", cfg->udp_sync_port);
     char tmps[64];
     for(int i=0; i<10; i++) {
       if(cfg->wlanssid[i][0] != 0) {
@@ -986,6 +990,15 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
   if (ini.getValue("config", "mqtt_ha_discovery", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_ha_discovery", buffer, bufferLen) || ini.getValue("mqtt", "ha_discovery", buffer, bufferLen) || ini.getValue("mqtt", "discovery", buffer, bufferLen)) {
     cfg->mqtt_ha_discovery = atoi(buffer);
     Serial.printf("mqtt_ha_discovery = %d\r\n", cfg->mqtt_ha_discovery);
+  }
+
+  if (ini.getValue("config", "udp_sync_enabled", buffer, bufferLen) || ini.getValue("udpsync", "enabled", buffer, bufferLen) || ini.getValue("udpsync", "udp_sync_enabled", buffer, bufferLen)) {
+    cfg->udp_sync_enabled = atoi(buffer);
+    Serial.printf("udp_sync_enabled = %d\r\n", cfg->udp_sync_enabled);
+  }
+  if (ini.getValue("config", "udp_sync_port", buffer, bufferLen) || ini.getValue("udpsync", "port", buffer, bufferLen) || ini.getValue("udpsync", "udp_sync_port", buffer, bufferLen)) {
+    cfg->udp_sync_port = atoi(buffer);
+    Serial.printf("udp_sync_port = %d\r\n", cfg->udp_sync_port);
   }
 
   int wlans_defined_count = 0;

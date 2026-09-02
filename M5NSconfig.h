@@ -75,6 +75,8 @@ struct tConfig {
   char mqtt_pass[64] = "";
   char mqtt_topic_prefix[64] = "m5ns";
   int mqtt_ha_discovery = 1; // 1 = enable Home Assistant discovery
+  int udp_sync_enabled = 1; // 1 = enable UDP LAN snooze sync between devices (default on)
+  int udp_sync_port = 50555; // UDP port for LAN mesh sync (all devices must match)
   char wlanssid[10][64];
   char wlanpass[10][64];
 } ;

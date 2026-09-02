@@ -96,16 +96,8 @@ String M5NSversion("2026090203");
 #define VIBchannel 14
 #define VIBresolution 10
 
-// The UDP library class
-WiFiUDP udp;
-#define UDP_TX_PACKET_MAX_SIZE 2048
-#define UDP_SEND_RETRIES 3
-// IP address to send UDP data to
-// const char * udpAddress = "192.168.1.255";
-const int udpPort = 50555;
-
-// buffers for receiving and sending UDP data
-char packetBuffer[UDP_TX_PACKET_MAX_SIZE];  //buffer to hold incoming packet,
+// UDP LAN snooze-sync (see M5NSUdpSync.cpp for implementation details)
+#include "M5NSUdpSync.h"
 
 // extern const unsigned char alarmSndData[];
 extern const unsigned char sun_icon16x16[];
@@ -218,7 +210,6 @@ time_t lastAlarmTime = 0;
 time_t snoozeUntil = 0;
 int snoozeMult = 0;
 unsigned long lastButtonMillis = 0;
-int udpSendSnoozeRetries = 0;
 bool is_task_bootstrapping = 0;
 
 struct NSinfo ns;
@@ -679,7 +670,7 @@ void triggerSnooze() {
         drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
     }
   }
-  udpSendSnoozeRetries = UDP_SEND_RETRIES;
+  udpSyncScheduleSnooze();
   lastButtonMillis = millis();
   mqttPublishState();
 }
@@ -733,7 +724,7 @@ void setSnooze(int minutes) {
         drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
     }
   }
-  udpSendSnoozeRetries = UDP_SEND_RETRIES;
+  udpSyncScheduleSnooze();
   lastButtonMillis = millis();
   mqttPublishState();
 }
@@ -1505,8 +1496,15 @@ void handleAlarmsInfoLine(struct NSinfo *ns) {
     alarmDifSec=difftime(mktime(&timeinfo), lastAlarmTime);
     if(timeOK) {
       snoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
-      if(snoozeRemaining < 0)
+      if(snoozeRemaining < 0) {
+        if(snoozeUntil > 0) {
+          // Snooze just expired – tell peers so they un-snooze too
+          snoozeUntil = 0;
+          snoozeMult = 0;
+          udpSyncScheduleSnooze();
+        }
         snoozeRemaining = 0;
+      }
     }
   }
   unsigned int sensorDifMin = (sensorDifSec+30)/60;
@@ -1786,19 +1784,6 @@ void handleAlarmsInfoLine(struct NSinfo *ns) {
     }
   }
 
-  // update snooze on other M5Stacks in local network
-  if(udpSendSnoozeRetries>0) {
-    udpSendSnoozeRetries--;
-    IPAddress broadcastIp = ~WiFi.subnetMask() | WiFi.gatewayIP(); // broadcast to local subnet
-    Serial.print("Sending UDP with Snooze infobroadcast to: ");
-    Serial.println(broadcastIp);
-    udp.beginPacket(broadcastIp, udpPort); // udpAddress
-    int urlCRC = calcCRC(cfg.url);
-    unsigned long snzUntl = snoozeUntil;
-    udp.printf("M5_Nightscout SNOOZE: USR=%d, SnoozeUntil=%lu", urlCRC, snzUntl);
-    udp.write('\0');
-    udp.endPacket();
-  }
   M5.Lcd.setTextDatum(TL_DATUM); // restore default datum for the rest of the drawing code
 }
 
@@ -2793,7 +2778,7 @@ void setup() {
     }
 
     if (!is_task_bootstrapping) {
-      udp.begin(WiFi.localIP(),udpPort);
+      udpSyncInit();
       mqttInit();
     }
     
@@ -3080,54 +3065,8 @@ void loop() {
   }  
   */
 
-  // handle UDP task
-  if (!is_task_bootstrapping) {
-    // if there's data available, read a packet
-    int packetSize = udp.parsePacket();
-    if(packetSize)
-    {
-      Serial.print("Received UDP packet of size ");
-      Serial.println(packetSize);
-      // read the packet into packetBufffer
-      udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
-      if(packetSize<UDP_TX_PACKET_MAX_SIZE)
-        packetBuffer[packetSize]=0;
-      /*
-      Serial.println("Contents:");
-      Serial.println(packetBuffer);
-      Serial.print("Remote IP: ");
-      Serial.print(udp.remoteIP());
-      Serial.print(":");
-      Serial.println(udp.remotePort());
-      Serial.print("Local IP: ");
-      Serial.println(WiFi.localIP());
-      */
-     
-      // send a reply, to the IP address and port that sent us the packet we received
-      /*
-      if((udp.remoteIP() != WiFi.localIP()) && (strncmp(packetBuffer, "Hello, M5NS here", 16)!=0)) {
-        Serial.println("Sending hello");
-        udp.beginPacket(udp.remoteIP(), udp.remotePort());
-        udp.print("Hello, M5NS here");
-        udp.endPacket();
-      }
-      */
-      if((WiFi.localIP()!=udp.remoteIP()) && (strncmp(packetBuffer, "M5_Nightscout SNOOZE: USR=", 26)==0)) {
-        //Serial.println("UDP SNOOZE packet, lets check CRC and info");
-        int urlCRC = calcCRC(cfg.url);
-        int urlCRC_rcvd = 0;
-        unsigned long snzUntl;
-        int sr = sscanf(packetBuffer, "M5_Nightscout SNOOZE: USR=%d, SnoozeUntil=%lu", &urlCRC_rcvd, &snzUntl);
-        //Serial.printf("scanf res = %d\r\n", sr);
-        //Serial.printf("urlCRC = %d, urlCRC reveived = %d\r\n", urlCRC, urlCRC_rcvd);
-        if((sr==2) && (urlCRC==urlCRC_rcvd)) {
-          Serial.printf("Correct UDP SNOOZE received, we should SNOOZE until %lu\r\n", snzUntl);
-          snoozeUntil = snzUntl;
-          handleAlarmsInfoLine(&ns);
-        }
-      }
-    }
-  }
+  // UDP LAN snooze-sync – receive incoming packets and drain pending retry broadcasts
+  udpSyncLoop();
   
   // Serial.println("M5.update() and loop again");
   M5.update();
