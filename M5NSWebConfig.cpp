@@ -43,7 +43,7 @@ static const char* updateVariantPath() {
 #endif
 }
 static String updateURL(const char* file) {
-  return String("https://raw.githubusercontent.com/psonnera/M5_NightscoutMon/master/Binaries/")
+  return String("https://raw.githubusercontent.com/stncttr908/M5_NightscoutMon/master/Binaries/")
          + updateVariantPath() + "/" + file;
 }
 
@@ -575,6 +575,9 @@ void otaRunUpdate() {
 }
 
 void handleUpdate() {
+  bool force = w3srv.hasArg("force");
+  String customBinUrl = w3srv.hasArg("url") ? w3srv.arg("url") : "";
+
   Serial.print("Updating firmware, please wait ... ");
   M5.Display.setBrightness(255);
   M5.Lcd.fillScreen(BLACK);
@@ -597,7 +600,7 @@ void handleUpdate() {
   HTTPClient http;
   WiFiClientSecure client;
   client.setInsecure();
-  if((WiFi.status() == WL_CONNECTED)) {
+  if((WiFi.status() == WL_CONNECTED) && customBinUrl.length() == 0) {
     http.begin(client, updateURL("update.inf"));
     int httpCode = http.GET();
     if(httpCode > 0) {
@@ -608,11 +611,16 @@ void handleUpdate() {
   }
 
   M5.Lcd.print("Current firmware: "); M5.Lcd.println(M5NSversion);
-  M5.Lcd.print("Found firmware:"); M5.Lcd.println(webVer);
+  if (customBinUrl.length() > 0) {
+    M5.Lcd.print("Target URL: "); M5.Lcd.println(customBinUrl);
+  } else {
+    M5.Lcd.print("Found firmware: "); M5.Lcd.println(webVer);
+  }
   
-  if(webVer > M5NSversion) {
+  if(force || (customBinUrl.length() > 0) || (webVer > M5NSversion)) {
+    String targetUrl = (customBinUrl.length() > 0) ? customBinUrl : updateURL("M5_NightscoutMon.ino.bin");
     message += "<p>Updating firmware to version ";
-    message += webVer;
+    message += (customBinUrl.length() > 0) ? String("custom") : webVer;
     message += ", please wait ... </p>\r\n";
     message += "<p>Device will restart automatically.</p>\r\n";
     message += "</body>\r\n";
@@ -623,7 +631,7 @@ void handleUpdate() {
     M5.Lcd.println("Updating the firmware... ");
     M5.Lcd.println();
     httpUpdate.rebootOnUpdate(false);
-    t_httpUpdate_return ret = httpUpdate.update(client, updateURL("M5_NightscoutMon.ino.bin"));
+    t_httpUpdate_return ret = httpUpdate.update(client, targetUrl);
     //t_httpUpdate_return ret = httpUpdate.update(client, "server", 80, "file.bin");
 
     switch (ret) {
