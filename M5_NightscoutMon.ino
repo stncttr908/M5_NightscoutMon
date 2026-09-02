@@ -79,6 +79,7 @@ Adafruit_NeoPixel pixels(10, 15, NEO_GRB + NEO_KHZ800);
 #include "M5NSWebConfig.h"
 #include "M5NSDexcom.h"
 #include "M5NSLibre.h"
+#include "M5NSNightscout.h"
 
 #include <Wire.h>     //The DHT12 uses I2C comunication.
 #include "DHT12.h"
@@ -190,6 +191,16 @@ boolean mDNSactive = false;
 #endif
 
 #include "M5NSMqtt.h"
+
+enum AlarmLevel {
+  ALARM_LEVEL_NONE = 0,
+  ALARM_LEVEL_WARNING_LOW,
+  ALARM_LEVEL_ALARM_LOW,
+  ALARM_LEVEL_WARNING_HIGH,
+  ALARM_LEVEL_ALARM_HIGH,
+  ALARM_LEVEL_NO_READINGS,
+  ALARM_LEVEL_LOOP_ERROR
+};
 
 void draw_page();
 
@@ -1096,381 +1107,8 @@ int readDataSource() {
     case 2:
       return readLibre(&cfg, &ns);
     default:
-      return readNightscout(cfg.url, cfg.token, &ns);
+      return readNightscout(&cfg, &ns);
   }
-}
-
-int readNightscout(char *url, char *token, struct NSinfo *ns) {
-  HTTPClient http;
-  WiFiClientSecure sclient;
-  sclient.setCACert(rootCACertificate);
-
-  char NSurl[128];
-  int err=0;
-  char tmpstr[64];
-  bool is_https_Heroku = false;
-
-  // http.setReuse(false);
-  // if(client) {
-  // sclient.setCACert(rootCACertificate);
-  //  Serial.println("Client OK, setCACert OK");
-  //}
-  
-  if((WiFiMultiple.run() == WL_CONNECTED)) {
-    // configure target server and url
-    if(strncmp(url, "http", 4))
-      strcpy(NSurl,"https://");
-    else
-      strcpy(NSurl,"");
-    strcat(NSurl,url);
-    if(strlen(NSurl)>0) {
-      if(NSurl[strlen(NSurl)-1]=='/') {
-        NSurl[strlen(NSurl)-1]=0;
-      }
-    }
-    is_https_Heroku = (strstr(NSurl,"https://") != NULL) && (strstr(NSurl,"herokuapp.com") != NULL);
-    Serial.print("is_https_Heroku "); Serial.println(is_https_Heroku);
-    if(cfg.sgv_only) {
-      strcat(NSurl,"/api/v1/entries.json?find[type][$eq]=sgv&count=10");
-    } else {
-      strcat(NSurl,"/api/v1/entries.json?count=10");
-    }
-    if ((token!=NULL) && (strlen(token)>0)) {
-      strcat(NSurl,"&token=");
-      strcat(NSurl,token);
-    }
-
-    M5.Lcd.fillRect(icon_xpos[0], icon_ypos[0], 16, 16, BLACK);
-    drawIcon(icon_xpos[0], icon_ypos[0], (uint8_t*)wifi2_icon16x16, TFT_BLUE);
-    
-    Serial.print("JSON query NSurl = \'");Serial.print(NSurl);Serial.print("\'\r\n");
-    // http.begin(NSurl, "94:FC:F6:23:6C:37:D5:E7:92:78:3C:0B:5F:AD:0C:E4:9E:FD:9E:A8"); //HTTP
-    if( is_https_Heroku ) {
-      if(http.begin(sclient, NSurl)) {
-        Serial.println("http.begin HTTPS Heroku OK");
-      } else {
-        Serial.println("http.begin HTTPS Heroku FAILED");
-      }
-    } else {
-      if(http.begin(NSurl)) {
-        Serial.println("http.begin OK");
-      } else {
-        Serial.println("http.begin FAILED");
-      }
-    }
-    // http.connect();
-    // Serial.print("Connected "); Serial.println(http.connected()?"YES":"NO");
-    // http.setConnectTimeout(15000);
-    // http.setTimeout(15000);
-    
-    // Serial.print("[HTTP] GET...\r\n");
-    // start connection and send HTTP header
-    
-    const char * headerKeys[] = {"date", "server", "location"};
-    const size_t numberOfHeaders = 3;
-    http.collectHeaders(headerKeys, numberOfHeaders);
-
-    unsigned long timeInGET;
-    timeInGET = millis();
-    int httpCode = http.GET();
-    timeInGET = millis()-timeInGET;
-    
-    // httpCode will be negative on error
-    if(httpCode > 0) {
-      // HTTP header has been send and Server response header has been handled
-      Serial.printf("[HTTP] GET... code: %d after %lu ms\r\n", httpCode, timeInGET);
-
-      // file found at server
-      if(httpCode == HTTP_CODE_OK) {
-        String json = http.getString();
-        Serial.printf("GET() response JSON length = %d\r\n", json.length());
-        // remove any non text characters (just for sure)
-        for(int i=0; i<json.length(); i++) {
-          // Serial.print(json.charAt(i), DEC); Serial.print(" = "); Serial.println(json.charAt(i));
-          if(json.charAt(i)<32 /* || json.charAt(i)=='\\' */) {
-            json.setCharAt(i, 32);
-          }
-        }
-        // json.replace("\\n"," ");
-        // invalid Unicode character defined by Ascensia Diabetes Care Bluetooth Glucose Meter or Medtronic
-        // ArduinoJSON does not accept any unicode surrogate pairs like \u0032 or \u0000
-        json.replace("\\u0000"," ");
-        json.replace("\\u000b"," ");
-        json.replace("\\u0032"," ");
-        // Serial.println(json);
-        // const size_t capacity = JSON_ARRAY_SIZE(10) + 10*JSON_OBJECT_SIZE(19) + 3840;
-        // Serial.print("JSON size needed= "); Serial.print(capacity); 
-        int ndx=0;
-        int sr=json.indexOf("\"date\":", ndx);
-        while(sr!=-1) {
-          ndx=sr+1;
-          if(sr+20<json.length()) {
-            // Serial.printf("Found date at position %d with char '%c' at +20\r\n", sr, json.charAt(sr+20));
-            if(json.charAt(sr+20)=='.') {
-              Serial.printf("Deleting at postion %d char '%c'\r\n", sr+20, json.charAt(sr+20));
-              json.remove(sr+20,1);
-              while(sr+20<json.length() && json.charAt(sr+20)>='0' && json.charAt(sr+20)<='9') {
-                Serial.printf("Cyclus deleting at postition %d char '%c'\r\n", sr+20, json.charAt(sr+20));
-                json.remove(sr+20,1);
-              }
-            }
-          }
-          sr=json.indexOf("\"date\":", ndx);
-        }
-        // Serial.println(json);
-        Serial.print("Free Heap = "); Serial.println(ESP.getFreeHeap());
-        DeserializationError JSONerr = deserializeJson(JSONdoc, json);
-        if(JSONerr) {
-          Serial.printf("JSON DeserializationError %s\r\n", JSONerr.c_str());
-        } else {
-          Serial.println("JSON deserialized OK");
-        }
-        JsonArray arr=JSONdoc.as<JsonArray>();
-        Serial.print("JSON array size = "); Serial.println(arr.size());
-        if (JSONerr || arr.size()==0) {   //Check for errors in parsing
-          if(JSONerr) {
-            err=1001; // "JSON parsing failed"
-            // Serial.println("JSON parsing failed");
-          } else {
-            err=1002; // "No data from Nightscout"
-            // Serial.println("No data from Nightscout");
-          }
-          addErrorLog(err);
-        } else {
-          JsonObject obj;
-          int sgvindex = 0;
-          do {
-            obj=JSONdoc[sgvindex].as<JsonObject>();
-            sgvindex++;
-          } while ((!obj.containsKey("sgv")) && (sgvindex<(arr.size()-1)));
-          sgvindex--;
-          if(sgvindex<0 || sgvindex>(arr.size()-1))
-            sgvindex=0;
-          strlcpy(ns->sensDev, JSONdoc[sgvindex]["device"] | "N/A", 64);
-          ns->is_xDrip = obj.containsKey("xDrip_raw");
-          /*
-          JsonVariant answer = JSONdoc[sgvindex]["date"];
-          const char* s = answer.as<char*>();
-          if(s!=NULL)
-            strlcpy(tmpstr, s, 32);
-          else
-            tmpstr[0]=0;
-          Serial.printf("DATE string: %s\r\n", tmpstr);
-          double LD=answer;
-          Serial.printf("DATE double: %lf\r\n", LD);
-          */
-          ns->rawtime = JSONdoc[sgvindex]["date"].as<long long>(); // sensTime is time in milliseconds since 1970, something like 1555229938118
-          ns->sensTime = ns->rawtime / 1000; // no milliseconds, since 2000 would be - 946684800, but ok
-          strlcpy(ns->sensDir, JSONdoc[sgvindex]["direction"] | "N/A", 32);
-          if(strcmp(ns->sensDir, "N/A")==0) { // Railway uses "trend" instead of "direction"
-            strlcpy(ns->sensDir, JSONdoc[sgvindex]["trend"] | "N/A", 32);
-          }
-          ns->sensSgv = JSONdoc[sgvindex]["sgv"]; // get value of sensor measurement
-          for(int i=0; i<=9; i++) {
-            ns->last10sgv[i]=JSONdoc[i]["sgv"];
-            ns->last10sgv[i]/=18.0;
-          }
-          ns->sensSgvMgDl = ns->sensSgv;
-          // internally we work in mmol/L
-          ns->sensSgv/=18.0;
-          
-          localtime_r(&ns->sensTime, &ns->sensTm);
-          
-          ns->arrowAngle = directionToArrowAngle(ns->sensDir);
-
-          Serial.print("sensDev = ");
-          Serial.println(ns->sensDev);
-          Serial.print("sensTime = ");
-          Serial.print(ns->sensTime);
-          sprintf(tmpstr, " (JSON %lld)", (long long) ns->rawtime);
-          Serial.print(tmpstr);
-          sprintf(tmpstr, " = %s\r", ctime(&ns->sensTime)); // The ctime() string is followed by a new-line character ('\n')
-          Serial.print(tmpstr);
-          Serial.print("sensSgv = ");
-          Serial.println(ns->sensSgv);
-          Serial.print("sensDir = ");
-          Serial.println(ns->sensDir);
-          // Serial.print(ns->sensTm.tm_year+1900); Serial.print(" / "); Serial.print(ns->sensTm.tm_mon+1); Serial.print(" / "); Serial.println(ns->sensTm.tm_mday);
-          Serial.print("Sensor time: "); Serial.print(ns->sensTm.tm_hour); Serial.print(":"); Serial.print(ns->sensTm.tm_min); Serial.print(":"); Serial.print(ns->sensTm.tm_sec); Serial.print(" DST "); Serial.println(ns->sensTm.tm_isdst);
-        } 
-      } else {
-        // httpCode containts http response error
-        addErrorLog(httpCode);
-        err=httpCode;
-        /*
-        for(int i = 0; i< http.headers(); i++){
-          Serial.print("Header: "); Serial.println(http.header(i));
-        } */
-        if(err==301 || err==302) {
-          if(http.header("location").length()>0) {
-            strncpy(cfg.url, http.header("location").c_str(), 127);
-            Serial.printf("HTTP error %d, redirecting to \"%s\"\r\n", err, cfg.url);
-            rcnt = 4; // retry the get asap
-          }
-        }
-      }
-    } else {
-      // httpCode < 0 = internal http error
-      addErrorLog(httpCode);
-      err=httpCode;
-    }
-    http.end();
-
-    if(err!=0) {
-      Serial.printf("Returning with error %d after %lu ms :-(\r\n", err, timeInGET);
-      Serial.println(http.errorToString(err));
-      return err;
-    }
-      
-
-    // the second query
-    if(strncmp(url, "http", 4))
-      strcpy(NSurl,"https://");
-    else
-      strcpy(NSurl,"");
-    strcat(NSurl,url);
-    if(strlen(NSurl)>0) {
-      if(NSurl[strlen(NSurl)-1]=='/') {
-        NSurl[strlen(NSurl)-1]=0;
-      }
-    }
-    switch(cfg.info_line) {
-      case 2:
-        strcat(NSurl,"/api/v2/properties/iob,cob,delta,loop,basal");
-        break;
-      case 3:
-        strcat(NSurl,"/api/v2/properties/iob,cob,delta,openaps,basal");
-        break;
-      default:
-        strcat(NSurl,"/api/v2/properties/iob,cob,delta,basal");
-    }
-    
-    if (strlen(token) > 0){
-      strcat(NSurl,"?token=");
-      strcat(NSurl,token);
-    }
-    
-    M5.Lcd.fillRect(icon_xpos[0], icon_ypos[0], 16, 16, BLACK);
-    drawIcon(icon_xpos[0], icon_ypos[0], (uint8_t*)wifi1_icon16x16, TFT_BLUE);
-
-    Serial.print("Properties query NSurl = \'");Serial.print(NSurl);Serial.print("\'\r\n");
-    // http.begin(NSurl, "94:FC:F6:23:6C:37:D5:E7:92:78:3C:0B:5F:AD:0C:E4:9E:FD:9E:A8"); //HTTP
-    if( is_https_Heroku ) {
-      if(http.begin(sclient, NSurl)) {
-        Serial.println("http.begin propertires HTTPS Heroku OK");
-      } else {
-        Serial.println("http.begin propertires HTTPS Heroku FAILED");
-      }
-    } else {
-      if(http.begin(NSurl)) {
-        Serial.println("http.begin propertires OK");
-      } else {
-        Serial.println("http.begin propertires FAILED");
-      }
-    }
-    // Serial.print("[HTTP] GET properties...\r\n");
-    timeInGET = millis();
-    httpCode = http.GET();
-    timeInGET = millis()-timeInGET;
-    if(httpCode > 0) {
-      Serial.printf("[HTTP] GET properties... code: %d after %lu ms\r\n", httpCode, timeInGET);
-      if(httpCode == HTTP_CODE_OK) {
-        // const char* propjson = "{\"iob\":{\"iob\":0,\"activity\":0,\"source\":\"OpenAPS\",\"device\":\"openaps://Spike iPhone 8 Plus\",\"mills\":1557613521000,\"display\":\"0\",\"displayLine\":\"IOB: 0U\"},\"cob\":{\"cob\":0,\"source\":\"OpenAPS\",\"device\":\"openaps://Spike iPhone 8 Plus\",\"mills\":1557613521000,\"treatmentCOB\":{\"decayedBy\":\"2019-05-11T23:05:00.000Z\",\"isDecaying\":0,\"carbs_hr\":20,\"rawCarbImpact\":0,\"cob\":7,\"lastCarbs\":{\"_id\":\"5cd74c26156712edb4b32455\",\"enteredBy\":\"Martin\",\"eventType\":\"Carb Correction\",\"reason\":\"\",\"carbs\":7,\"duration\":0,\"created_at\":\"2019-05-11T22:24:00.000Z\",\"mills\":1557613440000,\"mgdl\":67}},\"display\":0,\"displayLine\":\"COB: 0g\"},\"delta\":{\"absolute\":-4,\"elapsedMins\":4.999483333333333,\"interpolated\":false,\"mean5MinsAgo\":69,\"mgdl\":-4,\"scaled\":-0.2,\"display\":\"-0.2\",\"previous\":{\"mean\":69,\"last\":69,\"mills\":1557613221946,\"sgvs\":[{\"mgdl\":69,\"mills\":1557613221946,\"device\":\"MIAOMIAO\",\"direction\":\"Flat\",\"filtered\":92588,\"unfiltered\":92588,\"noise\":1,\"rssi\":100}]}}}";
-        String propjson = http.getString();
-        Serial.printf("GET() properties response JSON length = %d\r\n", propjson.length());
-        // remove any non text characters (just for sure)
-        for(int i=0; i<propjson.length(); i++) {
-          // Serial.print(propjson.charAt(i), DEC); Serial.print(" = "); Serial.println(propjson.charAt(i));
-          if(propjson.charAt(i)<32 /* || propjson.charAt(i)=='\\' */) {
-            propjson.setCharAt(i, 32);
-          }
-        }
-        // propjson.replace("\\n"," ");
-        // invalid Unicode character defined by Ascensia Diabetes Care Bluetooth Glucose Meter
-        // ArduinoJSON does not accept any unicode surrogate pairs like \u0032 or \u0000
-        propjson.replace("\\u0000"," ");
-        propjson.replace("\\u000b"," ");
-        propjson.replace("\\u0032"," ");
-        DeserializationError propJSONerr = deserializeJson(JSONdoc, propjson);
-        if(propJSONerr) {
-          err=1003; // "JSON2 parsing failed"
-          Serial.println("JSON parsing failed");
-          addErrorLog(err);
-        } else {
-          Serial.println("Deserialized the second JSON and OK");
-          JsonObject iob = JSONdoc["iob"];
-          ns->iob = iob["iob"]; // 0
-          strncpy(ns->iob_display, iob["display"] | "N/A", 16); // 0
-          strncpy(ns->iob_displayLine, iob["displayLine"] | "IOB: N/A", 16); // "IOB: 0U"
-          // Serial.println("IOB OK");
-          
-          JsonObject cob = JSONdoc["cob"];
-          ns->cob = cob["cob"]; // 0
-          strncpy(ns->cob_display, cob["display"] | "N/A", 16); // 0
-          strncpy(ns->cob_displayLine, cob["displayLine"] | "COB: N/A", 16); // "COB: 0g"
-          // Serial.println("COB OK");
-          
-          JsonObject delta = JSONdoc["delta"];
-          ns->delta_absolute = delta["absolute"]; // -4
-          ns->delta_elapsedMins = delta["elapsedMins"]; // 4.999483333333333
-          ns->delta_interpolated = delta["interpolated"]; // false
-          ns->delta_mean5MinsAgo = delta["mean5MinsAgo"]; // 69
-          ns->delta_mgdl = delta["mgdl"]; // -4
-          ns->delta_scaled = ns->delta_mgdl/18.0;
-            if(cfg.show_mgdl) {
-              sprintf(ns->delta_display, "%+d", ns->delta_mgdl);
-            } else {
-              sprintf(ns->delta_display, "%+.1f", ns->delta_scaled);
-            }
-            
-          // Serial.println("DELTA OK");
-          
-          JsonObject loop_obj;
-          JsonObject loop_display;
-          if(cfg.info_line==3) {
-            loop_obj = JSONdoc["openaps"];
-            loop_display = loop_obj["status"];
-          } else {
-            loop_obj = JSONdoc["loop"];
-            loop_display = loop_obj["display"];
-          }
-          strncpy(tmpstr, loop_display["symbol"] | "?", 4); // "⌁"
-          ns->loop_display_symbol = tmpstr[0];
-          strncpy(ns->loop_display_code, loop_display["code"] | "N/A", 16); // "enacted"
-          strncpy(ns->loop_display_label, loop_display["label"] | "N/A", 16); // "Enacted"
-          // strncpy(ns->loop_display_label, "Error", 16); // "Enacted"
-          // Serial.println("LOOP OK");
-
-          JsonObject basal = JSONdoc["basal"];
-          strncpy(ns->basal_display, basal["display"] | "N/A", 16); // "T: 0.950U"      
-          // Serial.println("BASAL OK");
-          
-          JsonObject basal_current_doc = JSONdoc["basal"]["current"];
-          ns->basal_current = basal_current_doc["basal"]; // 0.1
-          ns->basal_tempbasal = basal_current_doc["tempbasal"]; // 0.1
-          ns->basal_combobolusbasal = basal_current_doc["combobolusbasal"]; // 0
-          ns->basal_totalbasal = basal_current_doc["totalbasal"]; // 0.1
-          // Serial.println("LOOP OK");
-        } 
-      } else {
-        addErrorLog(httpCode);
-        err=httpCode;
-      }
-    } else {
-      Serial.printf("Returning with error %d after %lu ms :-(\r\n", httpCode, timeInGET);
-      Serial.println(http.errorToString(httpCode));
-      addErrorLog(httpCode);
-      err=httpCode;
-    }
-    http.end();
-  } else {
-    // WiFi not connected
-    ESP.restart();
-  }
-
-  M5.Lcd.fillRect(icon_xpos[0], icon_ypos[0], 16, 16, BLACK);
-
-  return err;
 }
 
 void drawBatteryStatus(int16_t x, int16_t y) {
@@ -1499,309 +1137,216 @@ void drawBatteryStatus(int16_t x, int16_t y) {
   }
 }
 
-void handleAlarmsInfoLine(struct NSinfo *ns) {
-  struct tm timeinfo;
+static AlarmLevel evaluateAlarmState(const struct NSinfo *ns, unsigned int sensorDifMin) {
+  if((ns->sensSgv <= cfg.snd_alarm) && (ns->sensSgv >= 0.1)) {
+    return ALARM_LEVEL_ALARM_LOW;
+  }
+  if((ns->sensSgv <= cfg.snd_warning) && (ns->sensSgv >= 0.1)) {
+    return ALARM_LEVEL_WARNING_LOW;
+  }
+  if(ns->sensSgv >= cfg.snd_alarm_high) {
+    return ALARM_LEVEL_ALARM_HIGH;
+  }
+  if(ns->sensSgv >= cfg.snd_warning_high) {
+    return ALARM_LEVEL_WARNING_HIGH;
+  }
+  if(sensorDifMin >= cfg.snd_no_readings) {
+    return ALARM_LEVEL_NO_READINGS;
+  }
+  if(strstr(ns->loop_display_label, "Err") > 0) {
+    return ALARM_LEVEL_LOOP_ERROR;
+  }
+  return ALARM_LEVEL_NONE;
+}
 
-  // calculate sensor time difference
-  // calculate last alarm time difference
-  int sensorDifSec=24*60*60; // too much
-  int alarmDifSec=24*60*60; // too much
-  int snoozeRemaining = 0;
-  bool timeOK = getLocalTime(&timeinfo);
-  if(timeOK){
-    sensorDifSec=difftime(mktime(&timeinfo), ns->sensTime);
-    alarmDifSec=difftime(mktime(&timeinfo), lastAlarmTime);
-    if(timeOK) {
-      snoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
-      if(snoozeRemaining < 0) {
-        if(snoozeUntil > 0) {
-          // Snooze just expired – tell peers so they un-snooze too
-          snoozeUntil = 0;
-          snoozeMult = 0;
-          udpSyncScheduleSnooze();
-        }
-        snoozeRemaining = 0;
-      }
+static void updateMicroDotPhat(const struct NSinfo *ns) {
+  if(cfg.micro_dot_pHAT == 0) return;
+  char tmpStr[10];
+  if(cfg.show_mgdl == 1) {
+    sprintf(tmpStr, "%3.0f", ns->sensSgv * 18);
+    MD.writeDigit(1, tmpStr[0]);
+    MD.writeDigit(2, tmpStr[1]);
+    MD.writeDigit(3, tmpStr[2]);
+    if(ns->delta_scaled * 18 > 99) {
+      MD.writeDigit(4, '+');
+      MD.writeDigit(5, '9');
+      MD.writeDigit(6, '9');
+    } else {
+      sprintf(tmpStr, "%+3.0f", ns->delta_scaled * 18);
+      MD.writeDigit(4, tmpStr[0]);
+      MD.writeDigit(5, tmpStr[1]);
+      MD.writeDigit(6, tmpStr[2]);
+    }
+  } else {
+    sprintf(tmpStr, "%4.1f", ns->sensSgv);
+    MD.writeDigit(1, tmpStr[0]);
+    MD.writeDigit(2, tmpStr[1]);
+    MD.writeDigit(3, tmpStr[3] | 0x80);
+    if(ns->delta_scaled > 9.9) {
+      MD.writeDigit(4, '+');
+      MD.writeDigit(5, '9');
+      MD.writeDigit(6, '9' | 0x80);
+    } else {
+      sprintf(tmpStr, "%+4.1f", ns->delta_scaled);
+      MD.writeDigit(4, tmpStr[0]);
+      MD.writeDigit(5, tmpStr[1]);
+      MD.writeDigit(6, tmpStr[3] | 0x80);
     }
   }
-  unsigned int sensorDifMin = (sensorDifSec+30)/60;
-  
+}
+
+static void renderNormalInfoLine(const struct NSinfo *ns) {
+  int maxint = (255 * cfg.LED_strip_brightness) / 100;
+  M5.Lcd.fillRect(0, 220, 320, 20, TFT_BLACK);
+  M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  if(cfg.LED_strip_mode == 3) {
+    pixels.fill(pixels.Color(0, maxint, 0));
+    pixels.show();
+  } else if(cfg.LED_strip_mode == 1 || cfg.LED_strip_mode == 2) {
+    pixels.clear();
+    pixels.show();
+  }
+
+  char infoStr[64];
+  if(dispPage >= PAGE_ERRLOG) {
+    int xA = M5.Touch.isEnabled() ? 45 : 58;
+    int xB = M5.Touch.isEnabled() ? 150 : 153;
+    int xC = M5.Touch.isEnabled() ? 256 : 246;
+
+    drawIcon(xA, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
+    drawIcon(xC, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+
+    if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
+      M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
+      M5.Lcd.setFreeFont(FM9);
+      M5.Lcd.setTextDatum(MC_DATUM);
+      M5.Lcd.drawString("UPDATE", xB + 8, 228);
+      M5.Lcd.setTextDatum(TL_DATUM);
+    } else {
+      drawIcon(xB, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
+    }
+  } else {
+    switch(cfg.info_line) {
+      case 0: // sensor information
+        strcpy(infoStr, ns->sensDev);
+        if(strcmp(infoStr, "MIAOMIAO") == 0) {
+          if(ns->is_xDrip) {
+            strcpy(infoStr, "xDrip MiaoMiao + Libre");
+          } else {
+            strcpy(infoStr, "Spike MiaoMiao + Libre");
+          }
+        }
+        if(strcmp(infoStr, "Tomato") == 0)
+          strcat(infoStr, " MiaoMiao + Libre");
+        M5.Lcd.drawString(infoStr, 0, 240);
+        break;
+      case 1: // button function icons
+        if(M5.Touch.isEnabled()) {
+          drawIcon(45, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
+          drawIcon(150, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
+          drawIcon(256, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+        } else {
+          drawIcon(58, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
+          drawIcon(153, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
+          drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+        }
+        break;
+      case 2: // loop + basal information
+      case 3: // openaps + basal information
+        strcpy(infoStr, "L: ");
+        strlcat(infoStr, ns->loop_display_label, 64);
+        M5.Lcd.drawString(infoStr, 0, 240);
+        strcpy(infoStr, "B: ");
+        strlcat(infoStr, ns->basal_display, 64);
+        M5.Lcd.drawString(infoStr, 160, 240);
+        break;
+    }
+  }
+}
+
+void handleAlarmsInfoLine(struct NSinfo *ns) {
+  struct tm timeinfo;
+  int sensorDifSec = 24 * 60 * 60;
+  int alarmDifSec = 24 * 60 * 60;
+  int snoozeRemaining = 0;
+  bool timeOK = getLocalTime(&timeinfo);
+  if(timeOK) {
+    sensorDifSec = difftime(mktime(&timeinfo), ns->sensTime);
+    alarmDifSec  = difftime(mktime(&timeinfo), lastAlarmTime);
+    snoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
+    if(snoozeRemaining < 0) {
+      if(snoozeUntil > 0) {
+        // Snooze just expired – tell peers so they un-snooze too
+        snoozeUntil = 0;
+        snoozeMult = 0;
+        udpSyncScheduleSnooze();
+      }
+      snoozeRemaining = 0;
+    }
+  }
+  unsigned int sensorDifMin = (sensorDifSec + 30) / 60;
+
   Serial.print("Alarm time difference = "); Serial.print(alarmDifSec); Serial.println(" sec");
   Serial.print("Snooze time remaining = "); Serial.print(snoozeRemaining); Serial.print(" sec, Snooze until "); Serial.println(snoozeUntil);
+
   char tmpStr[10];
-  // Bottom info row: anchor to the screen bottom (BL/bottom-left). M5GFX places
-  // free-font text lower than the old TFT_eSPI (it reserves the full-font ascent+
-  // descender), so TL_DATUM at y=220 pushed the baseline past the 240 px edge onto
-  // the button area. Bottom-anchoring at y=240 keeps the whole row on screen.
   M5.Lcd.setTextDatum(BL_DATUM);
-  if( snoozeRemaining>0 ) {
-    sprintf(tmpStr, "%i", (snoozeRemaining+59)/60);
-    if(dispPage<maxPage)
+  if(snoozeRemaining > 0) {
+    sprintf(tmpStr, "%i", (snoozeRemaining + 59) / 60);
+    if(dispPage < maxPage)
       drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
   } else {
     strcpy(tmpStr, "Snooze");
-    if(dispPage<maxPage)
+    if(dispPage < maxPage)
       M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
   }
   M5.Lcd.setTextSize(1);
   M5.Lcd.setFreeFont(FSSB12);
-  // prapare intensity variables for LED strip brightness
-  int maxint = 255;
-  maxint *= cfg.LED_strip_brightness;
-  maxint /= 100;
-  int lessint = 192;
-  lessint *= cfg.LED_strip_brightness;
-  lessint /= 100;
-  // Serial.print("sensSgv="); Serial.print(sensSgv); Serial.print(", cfg.snd_alarm="); Serial.println(cfg.snd_alarm); 
-  if((ns->sensSgv<=cfg.snd_alarm) && (ns->sensSgv>=0.1)) {
-    // red alarm state
-    // M5.Lcd.fillRect(110, 220, 100, 20, TFT_RED);
-    Serial.println("ALARM LOW");
-    M5.Lcd.fillRect(0, 220, 320, 20, TFT_RED);
-    M5.Lcd.setTextColor(TFT_BLACK, TFT_RED);
-    int stw=M5.Lcd.textWidth(tmpStr);
-    M5.Lcd.drawString(tmpStr, 159-stw/2, 240);
-    if( (alarmDifSec>cfg.alarm_repeat*60) && (snoozeRemaining<=0) ) {
-        sndAlarm();
-        lastAlarmTime = mktime(&timeinfo);
-    }
-    if(cfg.LED_strip_mode>=2) {
-      pixels.fill(pixels.Color(maxint, 0, 0));
-      pixels.show();
-    } else {
-      if(cfg.LED_strip_mode==1) {
-        pixels.clear();
-        pixels.show();
-      }
-    }     
+
+  AlarmLevel level = evaluateAlarmState(ns, sensorDifMin);
+
+  if(level == ALARM_LEVEL_NONE) {
+    renderNormalInfoLine(ns);
   } else {
-    if((ns->sensSgv<=cfg.snd_warning) && (ns->sensSgv>=0.1)) {
-      // yellow warning state
-      // M5.Lcd.fillRect(110, 220, 100, 20, TFT_YELLOW);
-      Serial.println("WARNING LOW");
-      M5.Lcd.fillRect(0, 220, 320, 20, TFT_YELLOW);
-      M5.Lcd.setTextColor(TFT_BLACK, TFT_YELLOW);
-      int stw=M5.Lcd.textWidth(tmpStr);
-      M5.Lcd.drawString(tmpStr, 159-stw/2, 240);
-      if( (alarmDifSec>cfg.alarm_repeat*60) && (snoozeRemaining<=0) ) {
-        sndWarning();
-        lastAlarmTime = mktime(&timeinfo);
-      }
-      if(cfg.LED_strip_mode>=2) {
+    bool isAlarm = (level == ALARM_LEVEL_ALARM_LOW || level == ALARM_LEVEL_ALARM_HIGH || level == ALARM_LEVEL_LOOP_ERROR);
+    uint16_t bgColor = isAlarm ? TFT_RED : TFT_YELLOW;
+    const char* logMsg = isAlarm ? (level == ALARM_LEVEL_ALARM_LOW ? "ALARM LOW" : (level == ALARM_LEVEL_ALARM_HIGH ? "ALARM HIGH" : "LOOP ERROR"))
+                                 : (level == ALARM_LEVEL_WARNING_LOW ? "WARNING LOW" : (level == ALARM_LEVEL_WARNING_HIGH ? "WARNING HIGH" : "WARNING NO READINGS"));
+    Serial.println(logMsg);
+
+    M5.Lcd.fillRect(0, 220, 320, 20, bgColor);
+    M5.Lcd.setTextColor(TFT_BLACK, bgColor);
+    int stw = M5.Lcd.textWidth(tmpStr);
+    M5.Lcd.drawString(tmpStr, 159 - stw / 2, 240);
+
+    if(level == ALARM_LEVEL_LOOP_ERROR) {
+      M5.Lcd.drawString("LOOP", 2, 240);
+      M5.Lcd.drawString("ERR", 267, 240);
+    }
+
+    if((alarmDifSec > cfg.alarm_repeat * 60) && (snoozeRemaining <= 0)) {
+      if(isAlarm) sndAlarm();
+      else sndWarning();
+      if(timeOK) lastAlarmTime = mktime(&timeinfo);
+    }
+
+    int maxint = (255 * cfg.LED_strip_brightness) / 100;
+    int lessint = (192 * cfg.LED_strip_brightness) / 100;
+    if(cfg.LED_strip_mode >= 2) {
+      if(isAlarm) {
+        pixels.fill(pixels.Color(maxint, 0, 0));
+      } else {
         pixels.fill(pixels.Color(maxint, lessint, 0));
-        pixels.show();
-      } else {
-        if(cfg.LED_strip_mode==1) {
-          pixels.clear();
-          pixels.show();
-        }
-      }     
-    } else {
-      if( ns->sensSgv>=cfg.snd_alarm_high ) {
-        // red alarm state
-        // M5.Lcd.fillRect(110, 220, 100, 20, TFT_RED);
-        Serial.println("ALARM HIGH");
-        M5.Lcd.fillRect(0, 220, 320, 20, TFT_RED);
-        M5.Lcd.setTextColor(TFT_BLACK, TFT_RED);
-        int stw=M5.Lcd.textWidth(tmpStr);
-        M5.Lcd.drawString(tmpStr, 159-stw/2, 240);
-        if( (alarmDifSec>cfg.alarm_repeat*60) && (snoozeRemaining<=0) ) {
-          sndAlarm();
-          lastAlarmTime = mktime(&timeinfo);
-        }
-        if(cfg.LED_strip_mode>=2) {
-          pixels.fill(pixels.Color(maxint, 0, 0));
-          pixels.show();
-        } else {
-          if(cfg.LED_strip_mode==1) {
-            pixels.clear();
-            pixels.show();
-          }
-        }     
-      } else {
-        if( ns->sensSgv>=cfg.snd_warning_high ) {
-          // yellow warning state
-          // M5.Lcd.fillRect(110, 220, 100, 20, TFT_YELLOW);
-          Serial.println("WARNING HIGH");
-          M5.Lcd.fillRect(0, 220, 320, 20, TFT_YELLOW);
-          M5.Lcd.setTextColor(TFT_BLACK, TFT_YELLOW);
-          int stw=M5.Lcd.textWidth(tmpStr);
-          M5.Lcd.drawString(tmpStr, 159-stw/2, 240);
-          if( (alarmDifSec>cfg.alarm_repeat*60) && (snoozeRemaining<=0) ) {
-            sndWarning();
-            lastAlarmTime = mktime(&timeinfo);
-          }
-          if(cfg.LED_strip_mode>=2) {
-            pixels.fill(pixels.Color(maxint, lessint, 0));
-            pixels.show();
-          } else {
-            if(cfg.LED_strip_mode==1) {
-              pixels.clear();
-              pixels.show();
-            }
-          }     
-        } else {
-          if( sensorDifMin>=cfg.snd_no_readings ) {
-            // LONG TIME NO READINGS -> yellow warning state
-            // M5.Lcd.fillRect(110, 220, 100, 20, TFT_YELLOW);
-            Serial.println("WARNING NO READINGS");
-            M5.Lcd.fillRect(0, 220, 320, 20, TFT_YELLOW);
-            M5.Lcd.setTextColor(TFT_BLACK, TFT_YELLOW);
-            int stw=M5.Lcd.textWidth(tmpStr);
-            M5.Lcd.drawString(tmpStr, 159-stw/2, 240);
-            if( (alarmDifSec>cfg.alarm_repeat*60) && (snoozeRemaining<=0) ) {
-              sndWarning();
-              lastAlarmTime = mktime(&timeinfo);
-            }
-            if(cfg.LED_strip_mode>=2) {
-              pixels.fill(pixels.Color(maxint, lessint, 0));
-              pixels.show();
-            } else {
-              if(cfg.LED_strip_mode==1) {
-                pixels.clear();
-                pixels.show();
-              }
-            }     
-          } else {
-            if( strstr(ns->loop_display_label,"Err" )>0 ) {
-              // LOOP ERROR -> red alarm state
-              // M5.Lcd.fillRect(110, 220, 100, 20, TFT_RED);
-              Serial.println("LOOP ERROR");
-              M5.Lcd.fillRect(0, 220, 320, 20, TFT_RED);
-              M5.Lcd.setTextColor(TFT_BLACK, TFT_RED);
-              int stw=M5.Lcd.textWidth(tmpStr);
-              M5.Lcd.drawString(tmpStr, 159-stw/2, 240);
-              M5.Lcd.drawString("LOOP", 2, 240);
-              M5.Lcd.drawString("ERR", 267, 240);
-              if( (alarmDifSec>cfg.alarm_repeat*60) && (snoozeRemaining<=0) ) {
-                sndAlarm();
-                lastAlarmTime = mktime(&timeinfo);
-              }
-              if(cfg.LED_strip_mode>=2) {
-                pixels.fill(pixels.Color(maxint, 0, 0));
-                pixels.show();
-              } else {
-                if(cfg.LED_strip_mode==1) {
-                  pixels.clear();
-                  pixels.show();
-                }
-              }     
-            } else {
-              // normal glycemia state
-              M5.Lcd.fillRect(0, 220, 320, 20, TFT_BLACK);
-              M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-              if(cfg.LED_strip_mode==3) {
-                pixels.fill(pixels.Color(0, maxint, 0));
-                pixels.show();
-              } else {
-                if(cfg.LED_strip_mode==1 || cfg.LED_strip_mode==2) {
-                  pixels.clear();
-                  pixels.show();
-                }
-              }
-              // draw info line
-              char infoStr[64];
-              if(dispPage >= PAGE_ERRLOG) {
-                // Log/config pages: draw standard button navigation icons.
-                // On the config page, show green UPDATE over middle button if an update is available.
-                int xA = M5.Touch.isEnabled() ? 45 : 58;
-                int xB = M5.Touch.isEnabled() ? 150 : 153;
-                int xC = M5.Touch.isEnabled() ? 256 : 246;
-
-                drawIcon(xA, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
-                drawIcon(xC, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
-
-                if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
-                  M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-                  M5.Lcd.setFreeFont(FM9);
-                  M5.Lcd.setTextDatum(MC_DATUM);
-                  M5.Lcd.drawString("UPDATE", xB + 8, 228);
-                  M5.Lcd.setTextDatum(TL_DATUM);
-                } else {
-                  drawIcon(xB, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
-                }
-              } else {
-                switch( cfg.info_line ) {
-                  case 0: // sensor information
-                    strcpy(infoStr, ns->sensDev);
-                    if(strcmp(infoStr,"MIAOMIAO")==0) {
-                      if(ns->is_xDrip) {
-                        strcpy(infoStr,"xDrip MiaoMiao + Libre");
-                      } else {
-                        strcpy(infoStr,"Spike MiaoMiao + Libre");
-                      }
-                    }
-                    if(strcmp(infoStr,"Tomato")==0)
-                      strcat(infoStr," MiaoMiao + Libre");
-                    M5.Lcd.drawString(infoStr, 0, 240);
-                    break;
-                  case 1: // button function icons
-                    // touch boards (Core2/CoreS3) centre icons over the 3 touch zones;
-                    // physical-button boards (Basic/Fire) align them under the 3 buttons
-                    if(M5.Touch.isEnabled()) {
-                      drawIcon(45, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
-                      drawIcon(150, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
-                      drawIcon(256, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
-                    } else {
-                      drawIcon(58, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
-                      drawIcon(153, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
-                      drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
-                    }
-                    break;
-                  case 2: // loop + basal information
-                  case 3: // openaps + basal information
-                    strcpy(infoStr, "L: ");
-                    strlcat(infoStr, ns->loop_display_label, 64);
-                    M5.Lcd.drawString(infoStr, 0, 240);
-                    strcpy(infoStr, "B: ");
-                    strlcat(infoStr, ns->basal_display, 64);
-                    M5.Lcd.drawString(infoStr, 160, 240);
-                    break;
-                }
-              }
-            }
-          }
-        }
       }
+      pixels.show();
+    } else if(cfg.LED_strip_mode == 1) {
+      pixels.clear();
+      pixels.show();
     }
   }
 
-  if(cfg.micro_dot_pHAT != 0) {
-    // update Micro Dot pHAT display
-    if(cfg.show_mgdl==1) {
-      sprintf(tmpStr, "%3.0f", ns->sensSgv*18);
-      MD.writeDigit(1, tmpStr[0]);
-      MD.writeDigit(2, tmpStr[1]);
-      MD.writeDigit(3, tmpStr[2]);
-      if(ns->delta_scaled*18>99) {
-        MD.writeDigit(4, '+');
-        MD.writeDigit(5, '9');
-        MD.writeDigit(6, '9');
-      } else {
-        sprintf(tmpStr, "%+3.0f", ns->delta_scaled*18);
-        MD.writeDigit(4, tmpStr[0]);
-        MD.writeDigit(5, tmpStr[1]);
-        MD.writeDigit(6, tmpStr[2]);
-      }
-    } else {
-      sprintf(tmpStr, "%4.1f", ns->sensSgv);
-      MD.writeDigit(1, tmpStr[0]);
-      MD.writeDigit(2, tmpStr[1]);
-      MD.writeDigit(3, tmpStr[3] | 0x80);
-      if(ns->delta_scaled>9.9) {
-        MD.writeDigit(4, '+');
-        MD.writeDigit(5, '9');
-        MD.writeDigit(6, '9' | 0x80);
-      } else {
-        sprintf(tmpStr, "%+4.1f", ns->delta_scaled);
-        MD.writeDigit(4, tmpStr[0]);
-        MD.writeDigit(5, tmpStr[1]);
-        MD.writeDigit(6, tmpStr[3] | 0x80);
-      }
-    }
-  }
-
-  M5.Lcd.setTextDatum(TL_DATUM); // restore default datum for the rest of the drawing code
+  updateMicroDotPhat(ns);
+  M5.Lcd.setTextDatum(TL_DATUM);
 }
 
 void drawLogWarningIcon() {

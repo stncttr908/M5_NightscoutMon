@@ -23,6 +23,7 @@ extern uint8_t lcdBrightness;
 extern DynamicJsonDocument JSONdoc;
 extern void addErrorLog(int code);
 extern void drawIcon(int16_t x, int16_t y, const uint8_t *bitmap, uint16_t color);
+extern const char* rootCACertificate;
 
 // REST API and runtime state helpers
 extern uint32_t refreshIntervalSec;
