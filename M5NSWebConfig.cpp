@@ -545,6 +545,7 @@ void otaRunUpdate() {
       M5.Lcd.setTextColor(RED);
       M5.Lcd.println("UPDATE FAILED");
       delay(3000);
+      setBrightness(screenOn ? lcdBrightness : 0);
       M5.Lcd.fillScreen(BLACK);
       draw_page();
       break;
@@ -554,6 +555,7 @@ void otaRunUpdate() {
       M5.Lcd.setTextColor(YELLOW);
       M5.Lcd.println("NO UPDATES");
       delay(3000);
+      setBrightness(screenOn ? lcdBrightness : 0);
       M5.Lcd.fillScreen(BLACK);
       draw_page();
       break;
@@ -670,6 +672,7 @@ void handleUpdate() {
   if (!cfg.is_task_bootstrapping) {
     M5.update();
     delay(2000);
+    setBrightness(screenOn ? lcdBrightness : 0);
     M5.Lcd.fillScreen(BLACK);
     draw_page();
     if(cfg.LED_strip_mode != 0) { 
