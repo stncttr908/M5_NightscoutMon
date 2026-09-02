@@ -648,54 +648,101 @@ void resetNextRead() {
 void triggerSnooze() {
   struct tm timeinfo;
   bool timeOK = getLocalTime(&timeinfo);
-  
-  int currentSnoozeRemaining = 0;
-  if(timeOK && snoozeUntil > 0) {
-    currentSnoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
-    if(currentSnoozeRemaining < 0) currentSnoozeRemaining = 0;
-  }
-  
-  if (currentSnoozeRemaining <= 0 && (millis() - lastButtonMillis) >= 2000) {
-    snoozeMult = 1;
-  } else {
+  if( (millis()-lastButtonMillis)<2000 ) {
     snoozeMult++;
-    if(snoozeMult > 4)
+    if(snoozeMult>4)
       snoozeMult = 0;
+  } else {
+    snoozeMult = 1;
   }
-
-  if(!timeOK || snoozeMult == 0){
+  if(!timeOK){
     snoozeUntil = 0;
   } else {
-    snoozeUntil = mktime(&timeinfo) + snoozeMult * cfg.snooze_timeout * 60;
+    snoozeUntil = mktime(&timeinfo) + snoozeMult*cfg.snooze_timeout*60;
     Serial.print("snoozeUntil = "); Serial.println(snoozeUntil);
   }
 
   if (screenOn) {
+    M5.Lcd.fillRect(110, 220, 100, 20, TFT_WHITE);
+    M5.Lcd.setTextDatum(TL_DATUM);
     M5.Lcd.setTextSize(1);
     M5.Lcd.setFreeFont(FSSB12);
-    char tmpStr[24];
-    
-    if(snoozeMult == 0) {
-      strcpy(tmpStr, "SNOOZE OFF");
-      M5.Lcd.fillRect(90, 218, 140, 22, TFT_DARKGREY);
-      M5.Lcd.setTextColor(TFT_WHITE, TFT_DARKGREY);
-    } else {
-      int snzMin = snoozeMult * cfg.snooze_timeout;
-      sprintf(tmpStr, "SNOOZE: %dm", snzMin);
-      M5.Lcd.fillRect(90, 218, 140, 22, TFT_RED);
-      M5.Lcd.setTextColor(TFT_WHITE, TFT_RED);
-      if(cfg.LED_strip_mode == 2) {
+    M5.Lcd.setTextColor(TFT_BLACK, TFT_WHITE);
+    char tmpStr[10];
+    int snoozeRemaining = 0;
+    if(timeOK) {
+      snoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
+      if(snoozeRemaining<0)
+        snoozeRemaining = 0;
+    }
+    if(snoozeMult==0)
+      strcpy(tmpStr, "OFF");
+    else {
+      sprintf(tmpStr, "%i", (snoozeRemaining+59)/60);
+      if(cfg.LED_strip_mode==2) {
         pixels.clear();
         pixels.show();
       }
     }
-    
-    M5.Lcd.setTextDatum(MC_DATUM);
-    M5.Lcd.drawString(tmpStr, 160, 229);
+    int txw=M5.Lcd.textWidth(tmpStr);
+    Serial.print("Set SNOOZE: "); Serial.print(tmpStr); Serial.print(", snoozeUntil-now = "); Serial.println(snoozeRemaining);
+    M5.Lcd.drawString(tmpStr, 159-txw/2, 220);
+    if(dispPage<maxPage) {
+      if(snoozeMult==0)
+        M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
+      else
+        drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
+    }
+  }
+  udpSendSnoozeRetries = UDP_SEND_RETRIES;
+  lastButtonMillis = millis();
+  mqttPublishState();
+}
+
+int getSnoozeRemainingSeconds() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo) || snoozeUntil <= 0) return 0;
+  int rem = difftime(snoozeUntil, mktime(&timeinfo));
+  return (rem > 0) ? rem : 0;
+}
+
+int getSnoozeRemainingMinutes() {
+  int sec = getSnoozeRemainingSeconds();
+  return (sec > 0) ? (sec + 59) / 60 : 0;
+}
+
+void setSnooze(int minutes) {
+  struct tm timeinfo;
+  bool timeOK = getLocalTime(&timeinfo);
+  if (minutes <= 0 || !timeOK) {
+    snoozeUntil = 0;
+    snoozeMult = 0;
+  } else {
+    snoozeUntil = mktime(&timeinfo) + (time_t)minutes * 60;
+    snoozeMult = (cfg.snooze_timeout > 0) ? (minutes / cfg.snooze_timeout) : 1;
+    if (snoozeMult == 0) snoozeMult = 1;
+  }
+  
+  if (screenOn) {
+    M5.Lcd.fillRect(110, 220, 100, 20, TFT_WHITE);
     M5.Lcd.setTextDatum(TL_DATUM);
-    
-    if(dispPage < maxPage) {
-      if(snoozeMult == 0)
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setFreeFont(FSSB12);
+    M5.Lcd.setTextColor(TFT_BLACK, TFT_WHITE);
+    char tmpStr[10];
+    if (snoozeMult == 0) {
+      strcpy(tmpStr, "OFF");
+    } else {
+      sprintf(tmpStr, "%i", minutes);
+      if (cfg.LED_strip_mode == 2) {
+        pixels.clear();
+        pixels.show();
+      }
+    }
+    int txw = M5.Lcd.textWidth(tmpStr);
+    M5.Lcd.drawString(tmpStr, 159 - txw/2, 220);
+    if (dispPage < maxPage) {
+      if (snoozeMult == 0)
         M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
       else
         drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
@@ -1704,72 +1751,47 @@ void handleAlarmsInfoLine(struct NSinfo *ns) {
               } else {
                 switch( cfg.info_line ) {
                   case 0: // sensor information
-                    if(snoozeRemaining > 0) {
-                      snprintf(infoStr, sizeof(infoStr), "[Zz:%dm] ", (snoozeRemaining+59)/60);
-                      strlcat(infoStr, ns->sensDev, sizeof(infoStr));
-                    } else {
-                      strcpy(infoStr, ns->sensDev);
-                    }
-                    if(strcmp(ns->sensDev,"MIAOMIAO")==0) {
+                    strcpy(infoStr, ns->sensDev);
+                    if(strcmp(infoStr,"MIAOMIAO")==0) {
                       if(ns->is_xDrip) {
                         strcpy(infoStr,"xDrip MiaoMiao + Libre");
                       } else {
                         strcpy(infoStr,"Spike MiaoMiao + Libre");
                       }
                     }
-                    if(strcmp(ns->sensDev,"Tomato")==0)
+                    if(strcmp(infoStr,"Tomato")==0)
                       strcat(infoStr," MiaoMiao + Libre");
                     M5.Lcd.drawString(infoStr, 0, 240);
                     break;
                   case 1: // button function icons
                     // touch boards (Core2/CoreS3) centre icons over the 3 touch zones;
                     // physical-button boards (Basic/Fire) align them under the 3 buttons
-                    {
-                      auto drawSnoozeBtnExp = [&](int xB) {
-                        if (snoozeRemaining > 0) {
-                          int snzMin = (snoozeRemaining + 59) / 60;
-                          drawIcon(xB - 14, 220, (uint8_t*)clock_icon16x16, TFT_RED);
-                          M5.Lcd.setFreeFont(FM9);
-                          M5.Lcd.setTextDatum(TL_DATUM);
-                          M5.Lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-                          M5.Lcd.drawString(String(snzMin) + "m", xB + 4, 221);
-                        } else {
-                          drawIcon(xB, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
-                        }
-                      };
-
-                      if(M5.Touch.isEnabled()) {
-                        drawIcon(45, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
-                        if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
-                          M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-                          M5.Lcd.setTextDatum(MC_DATUM);
-                          M5.Lcd.drawString("UPDATE", 160, 229);
-                        } else {
-                          drawSnoozeBtnExp(150);
-                        }
-                        drawIcon(256, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+                    if(M5.Touch.isEnabled()) {
+                      drawIcon(45, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
+                      if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
+                        M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
+                        M5.Lcd.setTextDatum(MC_DATUM);
+                        M5.Lcd.drawString("UPDATE", 160, 229);
                       } else {
-                        drawIcon(58, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
-                        if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
-                          M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-                          M5.Lcd.setTextDatum(MC_DATUM);
-                          M5.Lcd.drawString("UPDATE", 160, 229);
-                        } else {
-                          drawSnoozeBtnExp(153);
-                        }
-                        drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+                        drawIcon(150, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
                       }
+                      drawIcon(256, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+                    } else {
+                      drawIcon(58, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
+                      if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
+                        M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
+                        M5.Lcd.setTextDatum(MC_DATUM);
+                        M5.Lcd.drawString("UPDATE", 160, 229);
+                      } else {
+                        drawIcon(153, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
+                      }
+                      drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
                     }
                     break;
                   case 2: // loop + basal information
                   case 3: // openaps + basal information
-                    if(snoozeRemaining > 0) {
-                      snprintf(infoStr, sizeof(infoStr), "[Zz:%dm] ", (snoozeRemaining+59)/60);
-                      strlcat(infoStr, ns->loop_display_label, sizeof(infoStr));
-                    } else {
-                      strcpy(infoStr, "L: ");
-                      strlcat(infoStr, ns->loop_display_label, 64);
-                    }
+                    strcpy(infoStr, "L: ");
+                    strlcat(infoStr, ns->loop_display_label, 64);
                     M5.Lcd.drawString(infoStr, 0, 240);
                     strcpy(infoStr, "B: ");
                     strlcat(infoStr, ns->basal_display, 64);
