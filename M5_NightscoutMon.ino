@@ -796,51 +796,68 @@ void buttons_test() {
     }
   }
 
-  if(btnC_wasPressed) {
-    Serial.printf("C");
-    int longPress = 0;
-    unsigned long btnCPressTime = millis();
-    long pwrOffTimeout = 4000;
-    int lastDispTime = pwrOffTimeout/1000;
-    char tmpstr[32];
-    while(M5.BtnC.isPressed()) {
-      M5.Lcd.setTextSize(1);
-      M5.Lcd.setFreeFont(FSSB12);
-      M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-      int timeToPwrOff = (pwrOffTimeout - (millis()-btnCPressTime))/1000;
-      if((lastDispTime!=timeToPwrOff) && (millis()-btnCPressTime>800)) {
-        longPress = 1;
-        sprintf(tmpstr, "OFF in %1d   ", timeToPwrOff);
-        M5.Lcd.drawString(tmpstr, 210, 220);
-        lastDispTime=timeToPwrOff;
+  // Non-blocking long-press on C: short tap → cycle page; hold 4 s → power off.
+  // State is tracked across loop() calls via statics.
+  // The old implementation blocked loop() for up to 4 s, freezing the web server,
+  // MQTT reconnect, and UDP sync.
+  {
+    static unsigned long btnCPressStart = 0;
+    static bool btnCLongPress = false;
+    static int btnCLastDispSec = -1;
+
+    if (M5.BtnC.isPressed()) {
+      if (btnCPressStart == 0) {
+        // First frame of the press
+        btnCPressStart = millis();
+        btnCLongPress  = false;
+        btnCLastDispSec = -1;
+        Serial.printf("C");
       }
-      if(timeToPwrOff<=0) {
+      long held = (long)(millis() - btnCPressStart);
+      const long pwrOffTimeout = 4000;
+      int timeToPwrOff = (int)((pwrOffTimeout - held) / 1000);
+      if (held > 800) {
+        btnCLongPress = true;
+        if (timeToPwrOff != btnCLastDispSec) {
+          btnCLastDispSec = timeToPwrOff;
+          char tmpstr[32];
+          M5.Lcd.setTextSize(1);
+          M5.Lcd.setFreeFont(FSSB12);
+          M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+          sprintf(tmpstr, "OFF in %1d   ", timeToPwrOff);
+          M5.Lcd.drawString(tmpstr, 210, 220);
+        }
+      }
+      if (timeToPwrOff <= 0) {
         M5.Power.powerOff();
       }
+    } else if (btnCPressStart != 0) {
+      // Button just released — execute the action
+      if (btnCLongPress) {
+        M5.Lcd.fillRect(210, 220, 110, 20, TFT_BLACK);
+        drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+      } else {
+        cyclePage();
+      }
+      btnCPressStart  = 0;
+      btnCLongPress   = false;
+      btnCLastDispSec = -1;
       M5.update();
+      waitBtnRelease();
     }
-    if(longPress) {
-      M5.Lcd.fillRect(210, 220, 110, 20, TFT_BLACK);
-      drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
-    } else {
-      cyclePage();
-    }
-    M5.update();
-    waitBtnRelease();
   }
 }
 
 
 const char * CONSONANTS = "bcdfghjklmnpqrstvwxyz";
 const char * VOWELS = "aeiouy";
-int passLen = 8;
 
+// Generates a 9-character pronounceable passphrase (CVCVCVCVV pattern).
+// Buffer must be at least 10 bytes (9 chars + NUL).
 void generate_ssid_passphrase (char * buffer) {
-  char passphrase[passLen+1];
-  int max_consonants;
-  int max_vowels;
-  max_consonants = strlen(CONSONANTS);
-  max_vowels = strlen(VOWELS);
+  char passphrase[10]; // 9 chars + NUL — was passLen+1=9, one byte short
+  int max_consonants = strlen(CONSONANTS);
+  int max_vowels = strlen(VOWELS);
   randomSeed(analogRead(0));
   passphrase[0] = CONSONANTS[random(0, max_consonants)];
   passphrase[1] = VOWELS[random(0, max_vowels)];
