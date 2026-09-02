@@ -90,7 +90,7 @@ SHT3X sht30;
 #include "microdot.h"
 MicroDot MD;
 
-String M5NSversion("2026090201");
+String M5NSversion("2026090202");
 
 #define VIBfreq 10000
 #define VIBchannel 14
@@ -1633,14 +1633,23 @@ void handleAlarmsInfoLine(struct NSinfo *ns) {
               // draw info line
               char infoStr[64];
               if(dispPage >= PAGE_ERRLOG) {
-                // Log/config pages: loop/basal/sensor info is noise here (row was already
-                // cleared above). On the config page, show UPDATE over the middle button
-                // when otaCheckLatest() found a newer release - that's what BtnB now does
-                // on this page instead of snoozing.
+                // Log/config pages: draw standard button navigation icons.
+                // On the config page, show green UPDATE over middle button if an update is available.
+                int xA = M5.Touch.isEnabled() ? 45 : 58;
+                int xB = M5.Touch.isEnabled() ? 150 : 153;
+                int xC = M5.Touch.isEnabled() ? 256 : 246;
+
+                drawIcon(xA, 220, (uint8_t*)sun_icon16x16, TFT_LIGHTGREY);
+                drawIcon(xC, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
+
                 if(dispPage == PAGE_WEBQR && otaUpdateAvailable()) {
                   M5.Lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-                  int stw = M5.Lcd.textWidth("UPDATE");
-                  M5.Lcd.drawString("UPDATE", 159-stw/2, 240);
+                  M5.Lcd.setFreeFont(FM9);
+                  M5.Lcd.setTextDatum(MC_DATUM);
+                  M5.Lcd.drawString("UPDATE", xB + 8, 228);
+                  M5.Lcd.setTextDatum(TL_DATUM);
+                } else {
+                  drawIcon(xB, 220, (uint8_t*)clock_icon16x16, TFT_LIGHTGREY);
                 }
               } else {
                 switch( cfg.info_line ) {
