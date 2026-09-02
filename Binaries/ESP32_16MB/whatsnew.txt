@@ -1,1 +1,1 @@
-Fixed LibreLinkUp constantly reporting "No current reading" / "JSON parse failed": the glucose graph download was corrupted by chunked HTTP responses. Also fixed accounts with a pending LibreLinkUp terms-of-use acceptance being wrongly reported as wrong username/password.
+Added REST API endpoints (/api/*), native MQTT client with Home Assistant Auto-Discovery, dynamic refresh intervals, night mode schedule, and remote screenshot capture.
