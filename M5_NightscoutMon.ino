@@ -119,33 +119,7 @@ extern const unsigned char plug_icon16x16[];
 Preferences preferences;
 tConfig cfg;
 
-// Starfield Services Root Certificate Authority - G2
-// Valid till Dec 31 23:59:59 2037 GMT
-const char* rootCACertificate = \
-"-----BEGIN CERTIFICATE-----\n" \
-"MIID7zCCAtegAwIBAgIBADANBgkqhkiG9w0BAQsFADCBmDELMAkGA1UEBhMCVVMx" \
-"EDAOBgNVBAgTB0FyaXpvbmExEzARBgNVBAcTClNjb3R0c2RhbGUxJTAjBgNVBAoT" \
-"HFN0YXJmaWVsZCBUZWNobm9sb2dpZXMsIEluYy4xOzA5BgNVBAMTMlN0YXJmaWVs" \
-"ZCBTZXJ2aWNlcyBSb290IENlcnRpZmljYXRlIEF1dGhvcml0eSAtIEcyMB4XDTA5" \
-"MDkwMTAwMDAwMFoXDTM3MTIzMTIzNTk1OVowgZgxCzAJBgNVBAYTAlVTMRAwDgYD" \
-"VQQIEwdBcml6b25hMRMwEQYDVQQHEwpTY290dHNkYWxlMSUwIwYDVQQKExxTdGFy" \
-"ZmllbGQgVGVjaG5vbG9naWVzLCBJbmMuMTswOQYDVQQDEzJTdGFyZmllbGQgU2Vy" \
-"dmljZXMgUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgLSBHMjCCASIwDQYJKoZI" \
-"hvcNAQEBBQADggEPADCCAQoCggEBANUMOsQq+U7i9b4Zl1+OiFOxHz/Lz58gE20p" \
-"OsgPfTz3a3Y4Y9k2YKibXlwAgLIvWX/2h/klQ4bnaRtSmpDhcePYLQ1Ob/bISdm2" \
-"8xpWriu2dBTrz/sm4xq6HZYuajtYlIlHVv8loJNwU4PahHQUw2eeBGg6345AWh1K" \
-"Ts9DkTvnVtYAcMtS7nt9rjrnvDH5RfbCYM8TWQIrgMw0R9+53pBlbQLPLJGmpufe" \
-"hRhJfGZOozptqbXuNC66DQO4M99H67FrjSXZm86B0UVGMpZwh94CDklDhbZsc7tk" \
-"6mFBrMnUVN+HL8cisibMn1lUaJ/8viovxFUcdUBgF4UCVTmLfwUCAwEAAaNCMEAw" \
-"DwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0OBBYEFJxfAN+q" \
-"AdcwKziIorhtSpzyEZGDMA0GCSqGSIb3DQEBCwUAA4IBAQBLNqaEd2ndOxmfZyMI" \
-"bw5hyf2E3F/YNoHN2BtBLZ9g3ccaaNnRbobhiCPPE95Dz+I0swSdHynVv/heyNXB" \
-"ve6SbzJ08pGCL72CQnqtKrcgfU28elUSwhXqvfdqlS5sdJ/PHLTyxQGjhdByPq1z" \
-"qwubdQxtRbeOlKyWN7Wg0I8VRw7j6IPdj/3vQQF3zCepYoUz8jcI73HPdwbeyBkd" \
-"iEDPfUYd/x7H4c7/I9vG+o1VTqkC50cRRj70/b17KSa7qWFiNyi2LSr2EIZkyXCn" \
-"0q23KXB56jzaYyWf/Wi3MOxw+3WKt21gZ7IeyLnp2KhvAotnDU0mV3HaIPzBSlCN" \
-"sSi6" \
-"-----END CERTIFICATE-----\n";
+
 
 WebServer w3srv(80);
 const byte DNS_PORT = 53;
@@ -179,8 +153,8 @@ int icon_ypos[3] = {0, 0, 0};
 
 // analog clock global variables
 uint16_t osx=120, osy=120, omx=120, omy=120, ohx=120, ohy=120;  // Saved H, M, S x & y coords
-boolean initial = 1;
-boolean mDNSactive = false;
+bool initial = true;
+bool mDNSactive = false;
 
 #ifndef min
   #define min(a,b) (((a) < (b)) ? (a) : (b))
@@ -207,7 +181,6 @@ void draw_page();
 WiFiMulti WiFiMultiple;
 
 unsigned long msCount;
-// unsigned long msCountLog;
 unsigned long msStart;
 uint8_t lcdBrightness = 10;
 uint8_t savedBrightness = 50;
@@ -883,139 +856,133 @@ void generate_ssid_passphrase (char * buffer) {
   strcpy(buffer, passphrase);
 }
 
-void wifi_connect() {
+static void wifi_start_ap() {
   char ssid_passphrase[80];
-  if (is_task_bootstrapping) {
-    // offer access point to join for configuration purposes
-    WiFi.enableAP(true);
-    WiFi.mode(WIFI_AP);
-    IPAddress ip(192, 168, 0, 1);
-    IPAddress gateway(192, 168, 0, 1);
-    IPAddress subnet(255, 255, 255, 0);
-    Serial.print("Setting soft-AP configuration ... ");
-    Serial.println(WiFi.softAPConfig(ip, gateway, subnet) ? "Ready" : "Failed!");
-    // set random password
-    generate_ssid_passphrase(ssid_passphrase);
-    Serial.print("Setting soft-AP ... ");
-    Serial.println(WiFi.softAP(cfg.deviceName, ssid_passphrase) ? "Ready" : "Failed!");
-    delay(250);
-    Serial.print("Soft-AP IP address = ");
-    Serial.println(WiFi.softAPIP());
-    // WiFi.begin( );
-    dnsServer.setTTL(300);
-    dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
-    dnsServer.start(DNS_PORT, "*", ip);    
-  } else {
-    WiFi.mode(WIFI_STA);
-    WiFi.setHostname(cfg.deviceName);
-    WiFi.disconnect();
-    delay(100);
+  WiFi.enableAP(true);
+  WiFi.mode(WIFI_AP);
+  IPAddress ip(192, 168, 0, 1);
+  IPAddress gateway(192, 168, 0, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  Serial.print("Setting soft-AP configuration ... ");
+  Serial.println(WiFi.softAPConfig(ip, gateway, subnet) ? "Ready" : "Failed!");
 
-    Serial.println("WiFi connect start");
-    M5.Lcd.println("WiFi connect start");
+  generate_ssid_passphrase(ssid_passphrase);
+  Serial.print("Setting soft-AP ... ");
+  Serial.println(WiFi.softAP(cfg.deviceName, ssid_passphrase) ? "Ready" : "Failed!");
+  delay(250);
+  Serial.print("Soft-AP IP address = ");
+  Serial.println(WiFi.softAPIP());
 
-    // We start by connecting to a WiFi network
-    for(int i=0; i<=9; i++) {
-      if(cfg.wlanssid[i][0]!=0) {
-        if(cfg.wlanpass[i][0]==0) {
-          // no or empty password -> send NULL
-          WiFiMultiple.addAP(cfg.wlanssid[i], NULL);
-        } else {
-          WiFiMultiple.addAP(cfg.wlanssid[i], cfg.wlanpass[i]);
-        }
+  dnsServer.setTTL(300);
+  dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
+  dnsServer.start(DNS_PORT, "*", ip);
+
+  Serial.println("");
+  M5.Lcd.println("");
+  Serial.print("WiFi connected to SSID ");
+  Serial.println(cfg.deviceName);
+  Serial.print("SSID Passphrase: "); Serial.println(ssid_passphrase);
+
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.setCursor(4, 4);
+  M5.Lcd.println("SSID:");
+  M5.Lcd.setCursor(4, 24);
+  M5.Lcd.println(cfg.deviceName);
+  M5.Lcd.setCursor(4, 48);
+  M5.Lcd.println("Password:");
+  M5.Lcd.setCursor(4, 68);
+  M5.Lcd.println(ssid_passphrase);
+
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.setCursor(4, 96);
+  M5.Lcd.println("Then open");
+  M5.Lcd.setCursor(4, 116);
+  M5.Lcd.println("your browser");
+
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setCursor(4, 142);
+  M5.Lcd.println("If not prompted,");
+  M5.Lcd.setCursor(4, 156);
+  M5.Lcd.print("visit ");
+  M5.Lcd.println(WiFi.softAPIP());
+
+  M5.Lcd.setCursor(165, 26);
+  M5.Lcd.println("Scan to join:");
+
+  char wifiQR[96];
+  snprintf(wifiQR, sizeof(wifiQR), "WIFI:S:%s;T:WPA;P:%s;;", cfg.deviceName, ssid_passphrase);
+  M5.Lcd.qrcode(wifiQR, 165, 45, 150, 3);
+}
+
+static void wifi_connect_sta() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(cfg.deviceName);
+  WiFi.disconnect();
+  delay(100);
+
+  Serial.println("WiFi connect start");
+  M5.Lcd.println("WiFi connect start");
+
+  for(int i = 0; i <= 9; i++) {
+    if(cfg.wlanssid[i][0] != 0) {
+      if(cfg.wlanpass[i][0] == 0) {
+        WiFiMultiple.addAP(cfg.wlanssid[i], NULL);
+      } else {
+        WiFiMultiple.addAP(cfg.wlanssid[i], cfg.wlanpass[i]);
       }
     }
+  }
 
-    Serial.println();
-    M5.Lcd.println("");
-    Serial.print("Wait for WiFi... ");
-    M5.Lcd.print("Wait for WiFi... ");
+  Serial.println();
+  M5.Lcd.println("");
+  Serial.print("Wait for WiFi... ");
+  M5.Lcd.print("Wait for WiFi... ");
 
-    while(WiFiMultiple.run() != WL_CONNECTED) {
-        Serial.print(".");
-        M5.Lcd.print(".");
-        delay(500);
-    }
+  while(WiFiMultiple.run() != WL_CONNECTED) {
+    Serial.print(".");
+    M5.Lcd.print(".");
+    delay(500);
   }
 
   Serial.println("");
   M5.Lcd.println("");
   Serial.print("WiFi connected to SSID ");
-  if (is_task_bootstrapping) {
-    Serial.println(cfg.deviceName);
-    Serial.print("SSID Passphrase: "); Serial.println(ssid_passphrase);
+  Serial.println(WiFi.SSID());
+  M5.Lcd.print("WiFi SSID: "); M5.Lcd.println(WiFi.SSID());
+  Serial.print("IP address: ");
+  M5.Lcd.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  M5.Lcd.println(WiFi.localIP());
 
-    // Two-column layout: text on the left, a big QR code on the right. Columns don't
-    // overlap horizontally, so text line count/spacing can't collide with the QR
-    // regardless of vertical position - a leftover cursor position from earlier boot
-    // messages was the cause of the old overlap, so start from a clean, fully-positioned
-    // screen instead of continuing whatever line the cursor was left on.
-    M5.Lcd.fillScreen(BLACK);
-    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(4, 4);
-    M5.Lcd.println("SSID:");
-    M5.Lcd.setCursor(4, 24);
-    M5.Lcd.println(cfg.deviceName);
-    M5.Lcd.setCursor(4, 48);
-    M5.Lcd.println("Password:");
-    M5.Lcd.setCursor(4, 68);
-    M5.Lcd.println(ssid_passphrase);
-
-    // ".local" mDNS can't resolve before the phone has even joined this AP, and is
-    // unreliable from phones even after - the wildcard captive-portal DNS below
-    // (dnsServer.start(DNS_PORT, "*", ip)) answers every lookup with the device's own
-    // IP, so most phones auto-prompt to open the config page once joined; the IP is
-    // the reliable fallback if that prompt doesn't appear.
-    M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(4, 96);
-    M5.Lcd.println("Then open");
-    M5.Lcd.setCursor(4, 116);
-    M5.Lcd.println("your browser");
-
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(4, 142);
-    M5.Lcd.println("If not prompted,");
-    M5.Lcd.setCursor(4, 156);
-    M5.Lcd.print("visit ");
-    M5.Lcd.println(WiFi.softAPIP());
-
-    M5.Lcd.setCursor(165, 26);
-    M5.Lcd.println("Scan to join:");
-
-    // Most phone camera apps recognize this format natively and offer to join with one tap.
-    char wifiQR[96];
-    snprintf(wifiQR, sizeof(wifiQR), "WIFI:S:%s;T:WPA;P:%s;;", cfg.deviceName, ssid_passphrase);
-    M5.Lcd.qrcode(wifiQR, 165, 45, 150, 3);
-  } else {
-    Serial.println(WiFi.SSID());
-    M5.Lcd.print("WiFi SSID: "); M5.Lcd.println(WiFi.SSID());
-    Serial.print("IP address: ");
-    M5.Lcd.print("IP address: ");
-    Serial.println(WiFi.localIP());
-    M5.Lcd.println(WiFi.localIP());
-
-    configTime(cfg.timeZone, cfg.dst, ntpServer, "time.nist.gov", "time.google.com");
+  configTime(cfg.timeZone, cfg.dst, ntpServer, "time.nist.gov", "time.google.com");
+  delay(1000);
+  Serial.print("Waiting for time.");
+  int i = 0;
+  while(!getLocalTime(&localTimeInfo)) {
+    Serial.print(".");
     delay(1000);
-    Serial.print("Waiting for time.");
-    int i = 0;
-    while(!getLocalTime(&localTimeInfo)) {
-      Serial.print(".");
-      delay(1000);
-      i++;
-      if (i > MAX_TIME_RETRY) {
-        Serial.print("Gave up waiting for time to have a valid value.");
-        break;
-      }
+    i++;
+    if(i > MAX_TIME_RETRY) {
+      Serial.print("Gave up waiting for time to have a valid value.");
+      break;
     }
-    Serial.println();
-    printLocalTime();
-
-    Serial.println("Connection done");
-    M5.Lcd.println("Connection done");
   }
+  Serial.println();
+  printLocalTime();
 
+  Serial.println("Connection done");
+  M5.Lcd.println("Connection done");
+}
+
+void wifi_connect() {
+  if (is_task_bootstrapping) {
+    wifi_start_ap();
+  } else {
+    wifi_connect_sta();
+  }
 }
 
 int8_t getBatteryLevel()
@@ -1372,6 +1339,64 @@ void drawSegment(int x, int y, int r1, int r2, float a, int col)
       y3 = y + (sin(a) * r2);
       
   M5.Lcd.fillTriangle(x1,y1,x2,y2,x3,y3,col);
+}
+
+static void updateAnalogClock(const struct tm &timeinfo) {
+  float sx = 0, sy = 1, mx = 1, my = 0, hx = -1, hy = 0;
+  uint8_t hh = timeinfo.tm_hour, mm = timeinfo.tm_min, ss = timeinfo.tm_sec;
+
+  // Pre-compute hand degrees, x & y coords for a fast screen update
+  float sdeg = ss * 6;
+  float mdeg = mm * 6 + sdeg * 0.01666667;
+  float hdeg = hh * 30 + mdeg * 0.0833333;
+  hx = cos((hdeg - 90) * 0.0174532925);
+  hy = sin((hdeg - 90) * 0.0174532925);
+  mx = cos((mdeg - 90) * 0.0174532925);
+  my = sin((mdeg - 90) * 0.0174532925);
+  sx = cos((sdeg - 90) * 0.0174532925);
+  sy = sin((sdeg - 90) * 0.0174532925);
+
+  if (ss == 0 || initial) {
+    initial = false;
+    // Erase hour and minute hand positions every minute
+    M5.Lcd.drawLine(ohx, ohy, 160, 110, TFT_BLACK);
+    M5.Lcd.drawLine(ohx + 1, ohy, 161, 110, TFT_BLACK);
+    M5.Lcd.drawLine(ohx - 1, ohy, 159, 110, TFT_BLACK);
+    M5.Lcd.drawLine(ohx, ohy - 1, 160, 109, TFT_BLACK);
+    M5.Lcd.drawLine(ohx, ohy + 1, 160, 111, TFT_BLACK);
+    ohx = hx * 52 + 160;
+    ohy = hy * 52 + 110;
+    M5.Lcd.drawLine(omx, omy, 160, 110, TFT_BLACK);
+    omx = mx * 74 + 160;
+    omy = my * 74 + 110;
+  }
+
+  // Erase old seconds hand position
+  M5.Lcd.drawLine(osx, osy, 160, 110, TFT_BLACK);
+
+  // Draw day
+  M5.Lcd.drawRoundRect(182, 97, 36, 26, 7, TFT_LIGHTGREY);
+  M5.Lcd.setTextDatum(MC_DATUM);
+  M5.Lcd.setFreeFont(FSSB9);
+  M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Lcd.drawString(String(timeinfo.tm_mday), 200, 108);
+
+  // Draw name
+  M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  M5.Lcd.drawString(cfg.userName, 160, 145);
+
+  // Redraw new hand positions, hour and minute hands not erased here to avoid flicker
+  osx = sx * 78 + 160;
+  osy = sy * 78 + 110;
+  M5.Lcd.drawLine(ohx, ohy, 160, 110, TFT_WHITE);
+  M5.Lcd.drawLine(ohx + 1, ohy, 161, 110, TFT_WHITE);
+  M5.Lcd.drawLine(ohx - 1, ohy, 159, 110, TFT_WHITE);
+  M5.Lcd.drawLine(ohx, ohy - 1, 160, 109, TFT_WHITE);
+  M5.Lcd.drawLine(ohx, ohy + 1, 160, 111, TFT_WHITE);
+  M5.Lcd.drawLine(omx, omy, 160, 110, TFT_WHITE);
+  M5.Lcd.drawLine(osx, osy, 160, 110, TFT_RED);
+
+  M5.Lcd.fillCircle(160, 110, 3, TFT_RED);
 }
 
 void draw_page() {
@@ -1848,11 +1873,8 @@ void draw_page() {
       }
 
       // draw clock
-      float sx = 0, sy = 1, mx = 1, my = 0, hx = -1, hy = 0;    // Saved H, M, S x & y multipliers
-      float sdeg=0, mdeg=0, hdeg=0;
       uint16_t x0=0, x1=0, yy0=0, yy1=0;
-    
-      uint8_t hh=timeinfo.tm_hour, mm=timeinfo.tm_min, ss=timeinfo.tm_sec;  // Get current time
+      float sx = 0, sy = 0;
 
       // Draw clock face
       M5.Lcd.fillCircle(160, 110, 98, glColor);
@@ -1886,58 +1908,7 @@ void draw_page() {
     
       M5.Lcd.fillCircle(160, 110, 3, TFT_WHITE);
 
-      // draw day
-      M5.Lcd.drawRoundRect(182, 97, 36, 26, 7, TFT_LIGHTGREY);
-      M5.Lcd.setTextDatum(MC_DATUM);
-      M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-      M5.Lcd.setFreeFont(FSSB9);
-      M5.Lcd.drawString(String(timeinfo.tm_mday), 200, 108);
-    
-      // draw name
-      M5.Lcd.setTextDatum(MC_DATUM);
-      M5.Lcd.setFreeFont(FSSB9);
-      M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-      M5.Lcd.drawString(cfg.userName, 160, 145);
-  
-      // Pre-compute hand degrees, x & y coords for a fast screen update
-      sdeg = ss*6;                  // 0-59 -> 0-354
-      mdeg = mm*6+sdeg*0.01666667;  // 0-59 -> 0-360 - includes seconds
-      hdeg = hh*30+mdeg*0.0833333;  // 0-11 -> 0-360 - includes minutes and seconds
-      hx = cos((hdeg-90)*0.0174532925);    
-      hy = sin((hdeg-90)*0.0174532925);
-      mx = cos((mdeg-90)*0.0174532925);    
-      my = sin((mdeg-90)*0.0174532925);
-      sx = cos((sdeg-90)*0.0174532925);    
-      sy = sin((sdeg-90)*0.0174532925);
-
-      if (ss==0 || initial) {
-        initial = 0;
-        // Erase hour and minute hand positions every minute
-        M5.Lcd.drawLine(ohx, ohy, 160, 110, TFT_BLACK);
-        M5.Lcd.drawLine(ohx+1, ohy, 161, 110, TFT_BLACK);
-        M5.Lcd.drawLine(ohx-1, ohy, 159, 110, TFT_BLACK);
-        M5.Lcd.drawLine(ohx, ohy-1, 160, 109, TFT_BLACK);
-        M5.Lcd.drawLine(ohx, ohy+1, 160, 111, TFT_BLACK);
-        ohx = hx*52+160;    
-        ohy = hy*52+110;
-        M5.Lcd.drawLine(omx, omy, 160, 110, TFT_BLACK);
-        omx = mx*74+160;    
-        omy = my*74+110;
-      }
-  
-      // Redraw new hand positions, hour and minute hands not erased here to avoid flicker
-      M5.Lcd.drawLine(osx, osy, 160, 110, TFT_BLACK);
-      osx = sx*78+160;    
-      osy = sy*78+110;
-      M5.Lcd.drawLine(ohx, ohy, 160, 110, TFT_WHITE);
-      M5.Lcd.drawLine(ohx+1, ohy, 161, 110, TFT_WHITE);
-      M5.Lcd.drawLine(ohx-1, ohy, 159, 110, TFT_WHITE);
-      M5.Lcd.drawLine(ohx, ohy-1, 160, 109, TFT_WHITE);
-      M5.Lcd.drawLine(ohx, ohy+1, 160, 111, TFT_WHITE);
-      M5.Lcd.drawLine(omx, omy, 160, 110, TFT_WHITE);
-      M5.Lcd.drawLine(osx, osy, 160, 110, TFT_RED);
-  
-      M5.Lcd.fillCircle(160, 110, 3, TFT_RED);      
+      updateAnalogClock(timeinfo);      
 
       // draw angle arrow  
       int ay=0;
@@ -2542,90 +2513,11 @@ void loop() {
         if(lastMin!=localTimeInfo.tm_min || lastSec!=localTimeInfo.tm_sec) {
           lastSec=localTimeInfo.tm_sec;
           lastMin=localTimeInfo.tm_min;
-          
-          float sx = 0, sy = 1, mx = 1, my = 0, hx = -1, hy = 0;    // Saved H, M, S x & y multipliers
-          float sdeg=0, mdeg=0, hdeg=0;
-        
-          uint8_t hh=localTimeInfo.tm_hour, mm=localTimeInfo.tm_min, ss=localTimeInfo.tm_sec;  // Get current time
-          
-          // Pre-compute hand degrees, x & y coords for a fast screen update
-          sdeg = ss*6;                  // 0-59 -> 0-354
-          mdeg = mm*6+sdeg*0.01666667;  // 0-59 -> 0-360 - includes seconds
-          hdeg = hh*30+mdeg*0.0833333;  // 0-11 -> 0-360 - includes minutes and seconds
-          hx = cos((hdeg-90)*0.0174532925);    
-          hy = sin((hdeg-90)*0.0174532925);
-          mx = cos((mdeg-90)*0.0174532925);    
-          my = sin((mdeg-90)*0.0174532925);
-          sx = cos((sdeg-90)*0.0174532925);    
-          sy = sin((sdeg-90)*0.0174532925);
-    
-          if (ss==0 || initial) {
-            initial = 0;
-            // Erase hour and minute hand positions every minute
-            M5.Lcd.drawLine(ohx, ohy, 160, 110, TFT_BLACK);
-            M5.Lcd.drawLine(ohx+1, ohy, 161, 110, TFT_BLACK);
-            M5.Lcd.drawLine(ohx-1, ohy, 159, 110, TFT_BLACK);
-            M5.Lcd.drawLine(ohx, ohy-1, 160, 109, TFT_BLACK);
-            M5.Lcd.drawLine(ohx, ohy+1, 160, 111, TFT_BLACK);
-            ohx = hx*52+160;    
-            ohy = hy*52+110;
-            M5.Lcd.drawLine(omx, omy, 160, 110, TFT_BLACK);
-            omx = mx*74+160;    
-            omy = my*74+110;
-          }
-
-          // erase old seconds hand position
-          M5.Lcd.drawLine(osx, osy, 160, 110, TFT_BLACK);
-      
-          // draw day
-          M5.Lcd.drawRoundRect(182, 97, 36, 26, 7, TFT_LIGHTGREY);
-          M5.Lcd.setTextDatum(MC_DATUM);
-          M5.Lcd.setFreeFont(FSSB9);
-          M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-          M5.Lcd.drawString(String(localTimeInfo.tm_mday), 200, 108);
-       
-          // draw name
-          M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-          M5.Lcd.drawString(cfg.userName, 160, 145);
-      
-          // draw digital time
-          // M5.Lcd.drawString(localTimeStr, 160, 75);
-          
-          // Redraw new hand positions, hour and minute hands not erased here to avoid flicker
-          osx = sx*78+160;    
-          osy = sy*78+110;
-          // M5.Lcd.drawLine(osx, osy, 160, 110, TFT_RED);
-          M5.Lcd.drawLine(ohx, ohy, 160, 110, TFT_WHITE);
-          M5.Lcd.drawLine(ohx+1, ohy, 161, 110, TFT_WHITE);
-          M5.Lcd.drawLine(ohx-1, ohy, 159, 110, TFT_WHITE);
-          M5.Lcd.drawLine(ohx, ohy-1, 160, 109, TFT_WHITE);
-          M5.Lcd.drawLine(ohx, ohy+1, 160, 111, TFT_WHITE);
-          M5.Lcd.drawLine(omx, omy, 160, 110, TFT_WHITE);
-          M5.Lcd.drawLine(osx, osy, 160, 110, TFT_RED);
-      
-          M5.Lcd.fillCircle(160, 110, 3, TFT_RED);
+          updateAnalogClock(localTimeInfo);
         }
-        
       }
     }
   }
-
-  /*
-  if(millis()-msCountLog>5000) {
-    File fileLog = SD.open("/logfile.txt", FILE_WRITE);    
-    if(!fileLog) {
-      Serial.println("Cannot write to logfile.txt");
-    } else {
-      int pos = fileLog.seek(fileLog.size());
-      struct tm timeinfo;
-      getLocalTime(&timeinfo);
-      fileLog.println(asctime(&timeinfo));
-      fileLog.close();
-      Serial.print("Log file written: "); Serial.print(asctime(&timeinfo));
-    }
-    msCountLog = millis();  
-  }  
-  */
 
   // UDP LAN snooze-sync – receive incoming packets and drain pending retry broadcasts
   udpSyncLoop();

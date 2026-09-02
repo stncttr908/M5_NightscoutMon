@@ -19,7 +19,7 @@ extern const unsigned char wifi2_icon16x16[];
 extern int icon_xpos[3];
 extern int icon_ypos[3];
 extern int rcnt;
-extern const char* rootCACertificate;
+#include "RootCA.h"
 
 // Cleans raw JSON string of control characters and problematic Unicode sequences
 static void sanitizeJsonString(String &str) {

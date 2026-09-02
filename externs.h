@@ -12,7 +12,7 @@ extern WebServer w3srv;
 extern tConfig cfg;
 extern struct NSinfo ns;
 extern WiFiMulti WiFiMultiple;
-extern boolean mDNSactive;
+extern bool mDNSactive;
 extern int8_t getBatteryLevel();
 extern void draw_page();
 extern String M5NSversion;
@@ -23,7 +23,7 @@ extern uint8_t lcdBrightness;
 extern DynamicJsonDocument JSONdoc;
 extern void addErrorLog(int code);
 extern void drawIcon(int16_t x, int16_t y, const uint8_t *bitmap, uint16_t color);
-extern const char* rootCACertificate;
+
 
 // REST API and runtime state helpers
 extern uint32_t refreshIntervalSec;
