@@ -197,6 +197,8 @@ boolean mDNSactive = false;
     #define M_PI 3.14159265358979323846
 #endif
 
+#include "M5NSMqtt.h"
+
 void draw_page();
 
 WiFiMulti WiFiMultiple;
@@ -205,6 +207,10 @@ unsigned long msCount;
 // unsigned long msCountLog;
 unsigned long msStart;
 uint8_t lcdBrightness = 10;
+uint8_t savedBrightness = 50;
+bool screenOn = true;
+uint32_t refreshIntervalSec = 60;
+unsigned long lastReadMillis = 0;
 const char iniFilename[] = "/M5NS.INI";
 
 DynamicJsonDocument JSONdoc(16384);
@@ -476,124 +482,278 @@ void waitBtnRelease() {
   }
 }
 
+static bool s_isNightModeActive = false;
+static int s_preNightBrightness = -1;
+
+bool isNightModeActive() {
+  return s_isNightModeActive;
+}
+
+void checkNightMode() {
+  if (!cfg.night_mode_enabled) {
+    if (s_isNightModeActive) {
+      s_isNightModeActive = false;
+      if (s_preNightBrightness > 0) {
+        lcdBrightness = s_preNightBrightness;
+        if (screenOn) lcdSetBrightness(lcdBrightness);
+      }
+    }
+    return;
+  }
+
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return;
+
+  int curMins = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+
+  int startH = 22, startM = 0;
+  sscanf(cfg.night_mode_start, "%d:%d", &startH, &startM);
+  int startMins = startH * 60 + startM;
+
+  int endH = 7, endM = 0;
+  sscanf(cfg.night_mode_end, "%d:%d", &endH, &endM);
+  int endMins = endH * 60 + endM;
+
+  bool shouldBeNight = false;
+  if (startMins > endMins) {
+    shouldBeNight = (curMins >= startMins || curMins < endMins);
+  } else {
+    shouldBeNight = (curMins >= startMins && curMins < endMins);
+  }
+
+  if (shouldBeNight && !s_isNightModeActive) {
+    s_isNightModeActive = true;
+    s_preNightBrightness = lcdBrightness;
+    lcdBrightness = cfg.night_mode_brightness;
+    if (screenOn) {
+      lcdSetBrightness(lcdBrightness);
+    }
+    Serial.printf("Night Mode ACTIVE: brightness set to %d%%\r\n", lcdBrightness);
+    mqttPublishState();
+  } else if (!shouldBeNight && s_isNightModeActive) {
+    s_isNightModeActive = false;
+    if (s_preNightBrightness > 0) {
+      lcdBrightness = s_preNightBrightness;
+    } else {
+      lcdBrightness = cfg.brightness1;
+    }
+    if (screenOn) {
+      lcdSetBrightness(lcdBrightness);
+    }
+    Serial.printf("Night Mode ENDED: brightness restored to %d%%\r\n", lcdBrightness);
+    mqttPublishState();
+  }
+}
+
+void cycleBrightness() {
+  if(lcdBrightness==cfg.brightness1) 
+    lcdBrightness = cfg.brightness2;
+  else if(lcdBrightness==cfg.brightness2) 
+    lcdBrightness = cfg.brightness3;
+  else
+    lcdBrightness = cfg.brightness1;
+  savedBrightness = lcdBrightness;
+  if (!s_isNightModeActive) {
+    s_preNightBrightness = lcdBrightness;
+  }
+  screenOn = (lcdBrightness > 0);
+  lcdSetBrightness(lcdBrightness);
+  mqttPublishState();
+}
+
+void setBrightness(uint8_t val) {
+  if(val > 100) val = 100;
+  lcdBrightness = val;
+  if(val > 0) {
+    savedBrightness = val;
+    if (!s_isNightModeActive) {
+      s_preNightBrightness = val;
+    }
+    screenOn = true;
+  } else {
+    screenOn = false;
+  }
+  lcdSetBrightness(lcdBrightness);
+  mqttPublishState();
+}
+
+void cyclePage() {
+  dispPage++;
+  if(dispPage > maxPage)
+    dispPage = 0;
+  setPageIconPos(dispPage);
+  if (screenOn) {
+    M5.Lcd.clear(BLACK);
+    draw_page();
+  }
+  mqttPublishState();
+}
+
+void setPage(int page) {
+  if(page < 0) page = 0;
+  if(page > maxPage) page = maxPage;
+  dispPage = page;
+  setPageIconPos(dispPage);
+  if (screenOn) {
+    M5.Lcd.clear(BLACK);
+    draw_page();
+  }
+  mqttPublishState();
+}
+
+void setScreenPower(bool on) {
+  if (on) {
+    screenOn = true;
+    if (lcdBrightness == 0) {
+      lcdBrightness = (savedBrightness > 0) ? savedBrightness : ((cfg.brightness1 > 0) ? cfg.brightness1 : 10);
+    }
+    lcdSetBrightness(lcdBrightness);
+    M5.Lcd.clear(BLACK);
+    draw_page();
+  } else {
+    screenOn = false;
+    if (lcdBrightness > 0) {
+      savedBrightness = lcdBrightness;
+    }
+    lcdSetBrightness(0);
+  }
+  mqttPublishState();
+}
+
+void toggleScreenPower() {
+  setScreenPower(!screenOn);
+}
+
+void resetNextRead() {
+  lastReadMillis = 0;
+  msCount = millis() - 16000UL;
+  rcnt = 999;
+}
+
+void triggerSnooze() {
+  struct tm timeinfo;
+  bool timeOK = getLocalTime(&timeinfo);
+  if( (millis()-lastButtonMillis)<2000 ) {
+    snoozeMult++;
+    if(snoozeMult>4)
+      snoozeMult = 0;
+  } else {
+    snoozeMult = 1;
+  }
+  if(!timeOK){
+    snoozeUntil = 0;
+  } else {
+    snoozeUntil = mktime(&timeinfo) + snoozeMult*cfg.snooze_timeout*60;
+    Serial.print("snoozeUntil = "); Serial.println(snoozeUntil);
+  }
+
+  if (screenOn) {
+    M5.Lcd.fillRect(110, 220, 100, 20, TFT_WHITE);
+    M5.Lcd.setTextDatum(TL_DATUM);
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setFreeFont(FSSB12);
+    M5.Lcd.setTextColor(TFT_BLACK, TFT_WHITE);
+    char tmpStr[10];
+    int snoozeRemaining = 0;
+    if(timeOK) {
+      snoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
+      if(snoozeRemaining<0)
+        snoozeRemaining = 0;
+    }
+    if(snoozeMult==0)
+      strcpy(tmpStr, "OFF");
+    else {
+      sprintf(tmpStr, "%i", (snoozeRemaining+59)/60);
+      if(cfg.LED_strip_mode==2) {
+        pixels.clear();
+        pixels.show();
+      }
+    }
+    int txw=M5.Lcd.textWidth(tmpStr);
+    Serial.print("Set SNOOZE: "); Serial.print(tmpStr); Serial.print(", snoozeUntil-now = "); Serial.println(snoozeRemaining);
+    M5.Lcd.drawString(tmpStr, 159-txw/2, 220);
+    if(dispPage<maxPage) {
+      if(snoozeMult==0)
+        M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
+      else
+        drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
+    }
+  }
+  udpSendSnoozeRetries = UDP_SEND_RETRIES;
+  lastButtonMillis = millis();
+  mqttPublishState();
+}
+
+void getPowerTelemetry(String &powerSource, bool &isCharging, int &batPercentage, float &batVoltage) {
+  int8_t bl = getBatteryLevel();
+  batPercentage = (bl < 0) ? 0 : bl;
+  
+  int32_t mv = M5.Power.getBatteryVoltage();
+  batVoltage = (float)mv / 1000.0f;
+  
+  bool isMains = false;
+#if !defined(DEVICE_JC3248W535) && !defined(DEVICE_WS_TOUCH_LCD_35)
+  auto pwrType = M5.Power.getType();
+  if (pwrType == m5::Power_Class::pmic_t::pmic_axp192) {
+    isMains = M5.Power.Axp192.isACIN() || M5.Power.Axp192.isVBUS() || (M5.Power.getVBUSVoltage() > 3800);
+  } else if (pwrType == m5::Power_Class::pmic_t::pmic_axp2101) {
+    isMains = (M5.Power.getVBUSVoltage() > 3800) || (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
+  } else {
+    isMains = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging) || (bl >= 100);
+  }
+  isCharging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
+#elif defined(DEVICE_WS_TOUCH_LCD_35)
+  isMains = (bl < 0 || bl >= 100);
+  isCharging = false;
+#else
+  isMains = true;
+  isCharging = false;
+#endif
+
+  powerSource = isMains ? "mains" : "battery";
+}
+
 void buttons_test() {
 
   // On touch boards (Core2/CoreS3) M5Unified maps the bottom-of-screen zones to BtnA/B/C,
-  // so the same three-button logic works everywhere.
+  // and we also check on-screen touch coordinates (y >= 200) for direct LCD button taps.
   bool btnA_wasPressed = M5.BtnA.wasPressed();
   bool btnB_wasPressed = M5.BtnB.wasPressed();
   bool btnC_wasPressed = M5.BtnC.wasPressed();
 
+  if (M5.Touch.isEnabled() && M5.Touch.getCount() > 0) {
+    auto t = M5.Touch.getDetail();
+    if (t.wasPressed() && t.y >= 200) {
+      if (t.x < 106) btnA_wasPressed = true;
+      else if (t.x < 213) btnB_wasPressed = true;
+      else btnC_wasPressed = true;
+    }
+  }
+
   if(btnA_wasPressed) {
-    // M5.Lcd.printf("A");
     Serial.printf("A");
-    // play_tone(1000, 10, 1);
-    // sndAlarm();
-    if(lcdBrightness==cfg.brightness1) 
-      lcdBrightness = cfg.brightness2;
-    else
-      if(lcdBrightness==cfg.brightness2) 
-        lcdBrightness = cfg.brightness3;
-      else
-        lcdBrightness = cfg.brightness1;
-    lcdSetBrightness(lcdBrightness);
+    cycleBrightness();
     M5.update();
     waitBtnRelease();
-    // addErrorLog(500);
-    /* UDP send test
-    IPAddress broadcastIp = ~WiFi.subnetMask() | WiFi.gatewayIP();
-    Serial.print("Sending broadcast to: ");
-    Serial.println(broadcastIp);
-    udp.beginPacket(broadcastIp, udpPort); // udpAddress
-    udp.printf("Seconds since boot: %lu", millis()/1000);
-    udp.endPacket();
-    */
   }
 
   if(btnB_wasPressed) {
-    // M5.Lcd.printf("B");
     Serial.printf("B");
-
     if(dispPage == PAGE_WEBQR) {
-      // Config page: middle button takes the update draw_page() found on page entry,
-      // instead of snoozing (which is meaningless on this page). Nothing to do if none
-      // is available - button meaning reverts to snooze the moment you leave the page,
-      // since it's derived from dispPage, not stored state.
       if(otaUpdateAvailable())
         otaRunUpdate();
       M5.update();
       waitBtnRelease();
     } else {
-      /*
-      play_tone(440, 100, 1);
-      delay(10);
-      play_tone(880, 100, 1);
-      delay(10);
-      play_tone(1760, 100, 1);
-      */
-      struct tm timeinfo;
-      bool timeOK = getLocalTime(&timeinfo);
-      if( (millis()-lastButtonMillis)<2000 ) {
-        // snoozing just recently - will multiply snooze time
-        // Serial.printf("lastButton < 2s \r\n");
-        snoozeMult++;
-        if(snoozeMult>4)
-          snoozeMult = 0;
-      } else {
-        // Serial.printf("lastButton > 2s,  MULT = 1\r\n");
-        // new Snooze
-        snoozeMult = 1;
-      }
-      if(!timeOK){
-        // Serial.printf("Time not OK - NO SLEEP\r\n");
-        snoozeUntil = 0;
-      } else {
-        snoozeUntil = mktime(&timeinfo) + snoozeMult*cfg.snooze_timeout*60;
-        Serial.print("snoozeUntil = "); Serial.println(snoozeUntil);
-      }
-
-      M5.Lcd.fillRect(110, 220, 100, 20, TFT_WHITE);
-      M5.Lcd.setTextDatum(TL_DATUM);
-      M5.Lcd.setTextSize(1);
-      M5.Lcd.setFreeFont(FSSB12);
-      M5.Lcd.setTextColor(TFT_BLACK, TFT_WHITE);
-      char tmpStr[10];
-      int snoozeRemaining = 0;
-      if(timeOK) {
-        snoozeRemaining = difftime(snoozeUntil, mktime(&timeinfo));
-        if(snoozeRemaining<0)
-          snoozeRemaining = 0;
-      }
-      if(snoozeMult==0)
-        strcpy(tmpStr, "OFF");
-      else {
-        sprintf(tmpStr, "%i", (snoozeRemaining+59)/60);
-        if(cfg.LED_strip_mode==2) {
-          pixels.clear();
-          pixels.show();
-        }
-      }
-      int txw=M5.Lcd.textWidth(tmpStr);
-      Serial.print("Set SNOOZE: "); Serial.print(tmpStr); Serial.print(", snoozeUntil-now = "); Serial.println(snoozeRemaining);
-      M5.Lcd.drawString(tmpStr, 159-txw/2, 220);
-      if(dispPage<maxPage) {
-        if(snoozeMult==0)
-          M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
-        else
-          drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
-      }
-      udpSendSnoozeRetries = UDP_SEND_RETRIES;
-      lastButtonMillis = millis();
+      triggerSnooze();
       M5.update();
       waitBtnRelease();
     }
   }
 
   if(btnC_wasPressed) {
-    // M5.Lcd.printf("C");
     Serial.printf("C");
     int longPress = 0;
-    // long-press C to power off (physical button on Basic/Fire, held touch zone on Core2/CoreS3)
     unsigned long btnCPressTime = millis();
     long pwrOffTimeout = 4000;
     int lastDispTime = pwrOffTimeout/1000;
@@ -601,8 +761,6 @@ void buttons_test() {
     while(M5.BtnC.isPressed()) {
       M5.Lcd.setTextSize(1);
       M5.Lcd.setFreeFont(FSSB12);
-      // M5.Lcd.fillRect(110, 220, 100, 20, TFT_RED);
-      // M5.Lcd.fillRect(0, 220, 320, 20, TFT_RED);
       M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
       int timeToPwrOff = (pwrOffTimeout - (millis()-btnCPressTime))/1000;
       if((lastDispTime!=timeToPwrOff) && (millis()-btnCPressTime>800)) {
@@ -612,7 +770,6 @@ void buttons_test() {
         lastDispTime=timeToPwrOff;
       }
       if(timeToPwrOff<=0) {
-        // play_tone(3000, 100, 1);
         M5.Power.powerOff();
       }
       M5.update();
@@ -621,14 +778,7 @@ void buttons_test() {
       M5.Lcd.fillRect(210, 220, 110, 20, TFT_BLACK);
       drawIcon(246, 220, (uint8_t*)door_icon16x16, TFT_LIGHTGREY);
     } else {
-      dispPage++;
-      if(dispPage>maxPage)
-        dispPage = 0;
-      setPageIconPos(dispPage);
-      M5.Lcd.clear(BLACK);
-      // msCount = millis()-16000;
-      draw_page();
-      // play_tone(440, 100, 1);
+      cyclePage();
     }
     M5.update();
     waitBtnRelease();
@@ -2562,12 +2712,27 @@ void setup() {
       w3srv.on("/inline", []() {
         w3srv.send(200, "text/plain", "this is inline and works as well");
       });
+      // REST API Endpoints
+      w3srv.on("/api/refresh", handleApiRefresh);
+      w3srv.on("/api/action/brightness", handleApiActionBrightness);
+      w3srv.on("/api/brightness", handleApiBrightness);
+      w3srv.on("/api/action/page", handleApiActionPage);
+      w3srv.on("/api/page", handleApiPage);
+      w3srv.on("/api/action/snooze", handleApiActionSnooze);
+      w3srv.on("/api/screen", handleApiScreen);
+      w3srv.on("/api/power", handleApiPower);
+      w3srv.on("/api/status", handleApiStatus);
+      w3srv.on("/api/night_mode", handleApiNightMode);
+      w3srv.on("/api/screenshot", handleApiScreenshot);
+      w3srv.on("/screenshot.bmp", handleApiScreenshot);
+
       w3srv.onNotFound(handleNotFound);
       w3srv.begin();
     }
 
     if (!is_task_bootstrapping) {
       udp.begin(WiFi.localIP(),udpPort);
+      mqttInit();
     }
     
     // test file with time stamps
@@ -2583,17 +2748,68 @@ void setup() {
     msCount = msStart-16000;
 }
 
+void dumpFramebufferSerial() {
+  uint32_t width = M5.Lcd.width();
+  uint32_t height = M5.Lcd.height();
+  uint32_t rowSize = (width * 3 + 3) & ~3;
+  uint32_t imageSize = rowSize * height;
+  uint32_t fileSize = 54 + imageSize;
+
+  uint8_t header[54] = {
+    'B', 'M',
+    (uint8_t)(fileSize), (uint8_t)(fileSize >> 8), (uint8_t)(fileSize >> 16), (uint8_t)(fileSize >> 24),
+    0, 0, 0, 0,
+    54, 0, 0, 0,
+    40, 0, 0, 0,
+    (uint8_t)(width), (uint8_t)(width >> 8), (uint8_t)(width >> 16), (uint8_t)(width >> 24),
+    (uint8_t)(height), (uint8_t)(height >> 8), (uint8_t)(height >> 16), (uint8_t)(height >> 24),
+    1, 0,
+    24, 0,
+    0, 0, 0, 0,
+    (uint8_t)(imageSize), (uint8_t)(imageSize >> 8), (uint8_t)(imageSize >> 16), (uint8_t)(imageSize >> 24),
+    0x13, 0x0B, 0, 0,
+    0x13, 0x0B, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0
+  };
+
+  Serial.write(header, 54);
+  uint8_t rawRow[960];
+  uint8_t bgrRow[960];
+
+  for (int y = (int)height - 1; y >= 0; y--) {
+    M5.Lcd.readRectRGB(0, y, width, 1, rawRow);
+    for (uint32_t x = 0; x < width; x++) {
+      bgrRow[x * 3 + 0] = rawRow[x * 3 + 2];
+      bgrRow[x * 3 + 1] = rawRow[x * 3 + 1];
+      bgrRow[x * 3 + 2] = rawRow[x * 3 + 0];
+    }
+    Serial.write(bgrRow, rowSize);
+  }
+}
+
 // the loop routine runs over and over again forever
 void loop() {
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd.equalsIgnoreCase("CAPTURE") || cmd.equalsIgnoreCase("SCREENSHOT") || cmd.equalsIgnoreCase("BMP")) {
+      dumpFramebufferSerial();
+    }
+  }
+
   if(!cfg.disable_web_server || is_task_bootstrapping) {
     dnsServer.processNextRequest();
     w3srv.handleClient();
+  }
+  if (!is_task_bootstrapping) {
+    mqttLoop();
   }
   delay(20); // was 10
   if (!is_task_bootstrapping) {
     buttons_test();
 
-    // update glycemia every 15s, fetch new data and draw page
+    // update glycemia based on refreshIntervalSec or 15s display tick
     struct tm timeinfo;
     int sensorDifSec=24*60*60; // too much
     bool timeOK = getLocalTime(&timeinfo);
@@ -2601,28 +2817,33 @@ void loop() {
       sensorDifSec=difftime(mktime(&timeinfo), ns.sensTime);
     }
     // Serial.printf("sensorDifSec = %d\r\n", sensorDifSec);
-    if(millis()-msCount>15000) {
+    bool shouldRead = (lastReadMillis == 0) || ((millis() - lastReadMillis) >= (refreshIntervalSec * 1000UL));
+    if((millis()-msCount>15000) || shouldRead) {
       /* if(dispPage==2)
         M5.Lcd.drawLine(osx, osy, 160, 111, TFT_BLACK); // erase seconds hand while updating data
       */
-      if((sensorDifSec>305) && (rcnt>3)) {
+      if(shouldRead) {
+        lastReadMillis = millis();
         rcnt = 0;
         readDataSource();
+        mqttPublishState();
         if(rcnt==4) {
-          M5.Lcd.fillScreen(BLACK);
-          M5.Lcd.setTextColor(WHITE);
-          M5.Lcd.setCursor(0, 140);
-          M5.Lcd.setTextSize(2);
-          M5.Lcd.println("HTTP 30x Redirect");
-          M5.Lcd.println("Check you URL in config!");
-          M5.Lcd.println("Redirecting...");
-          // delay(500);
-          // M5.Lcd.fillScreen(BLACK);
+          if (screenOn) {
+            M5.Lcd.fillScreen(BLACK);
+            M5.Lcd.setTextColor(WHITE);
+            M5.Lcd.setCursor(0, 140);
+            M5.Lcd.setTextSize(2);
+            M5.Lcd.println("HTTP 30x Redirect");
+            M5.Lcd.println("Check you URL in config!");
+            M5.Lcd.println("Redirecting...");
+          }
           return;
         }
       }
       rcnt++;
-      draw_page();
+      if (screenOn) {
+        draw_page();
+      }
       msCount = millis();  
       // Serial.print("msCount = "); Serial.println(msCount);
       Serial.print("cfg.LED_strip_mode = "); Serial.println(cfg.LED_strip_mode);
@@ -2656,7 +2877,10 @@ void loop() {
           ESP.restart();
         }
       }
-      if((dispPage==0) && cfg.show_current_time) {
+
+      checkNightMode();
+
+      if(screenOn && (dispPage==0) && cfg.show_current_time) {
         // update current time on display
         M5.Lcd.setFreeFont(FSSB12);
         M5.Lcd.setTextSize(1);
@@ -2698,7 +2922,7 @@ void loop() {
           M5.Lcd.drawString(localTimeStr, 0, 0);
         }
       }
-      if(dispPage==2) {
+      if(screenOn && dispPage==2) {
         // update analog clock
         if(getLocalTime(&localTimeInfo)) {
           // sprintf(localTimeStr, "%02d:%02d:%02d", localTimeInfo.tm_hour, localTimeInfo.tm_min, localTimeInfo.tm_sec);

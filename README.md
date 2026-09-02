@@ -229,6 +229,43 @@ Firmware is served directly from this GitHub repository — the [`Binaries/`](Bi
 
 If you maintain your own fork, see [`Scripts/README.md`](Scripts/README.md#publishing-an-ota-update) for how to build and publish updates for it.
 
+### REST API & Live Controls
+
+When the web server is active, `M5_NightscoutMon` exposes non-blocking REST API endpoints for remote automation and Home Assistant integration:
+
+| Endpoint | Method | Parameters | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/refresh` | `GET` | `seconds=30` or `interval=5` | Sets refresh interval in seconds or minutes and resets the read timer immediately |
+| `/api/brightness` | `GET` | `val=0..100` | Sets screen backlight brightness directly |
+| `/api/action/brightness` | `GET` | _none_ | Cycles through brightness presets |
+| `/api/page` | `GET` | `val=0..4` | Switches directly to the specified page index |
+| `/api/action/page` | `GET` | _none_ | Cycles to the next screen page |
+| `/api/action/snooze` | `GET` | _none_ | Triggers / increments snooze multiplier |
+| `/api/screen` | `GET` | `val=on\|off\|toggle` | Controls LCD backlight without stopping background WiFi/polling |
+| `/api/power` | `GET` | _none_ | Reports power IC telemetry (battery %, voltage, charging state, mains vs battery) |
+| `/api/status` | `GET` | _none_ | Returns consolidated telemetry (glucose, delta, screen state, battery, etc.) |
+| `/api/night_mode` | `GET` | `enabled=0\|1&brightness=10&start=22:00&end=07:00` | Configures night mode schedule and dimming |
+| `/api/screenshot` | `GET` | _none_ | Returns 320x240 RGB BMP image snapshot of the current display framebuffer |
+
+### MQTT & Home Assistant Auto-Discovery
+
+A native MQTT client enables bi-directional communication and automatic device registration in Home Assistant:
+
+```ini
+[mqtt]
+mqtt_enabled = 1
+mqtt_server = 192.168.1.50
+mqtt_port = 1883
+mqtt_user = 
+mqtt_pass = 
+mqtt_topic_prefix = m5ns
+mqtt_ha_discovery = 1
+```
+
+- **Telemetry (`<prefix>/<deviceId>/state`)**: Continuously publishes JSON telemetry including glucose, delta, direction, battery %, voltage, charging status, and screen state.
+- **Controls**: Subscribes to commands on `<prefix>/<deviceId>/screen/set`, `brightness/set`, `page/set`, `snooze/set`, and `refresh/set`.
+- **Home Assistant Auto-Discovery**: Automatically configures sensor entities, binary sensors, switches, numbers, and buttons under Home Assistant without manual YAML.
+
 ### License and credits
 
 M5_NightscoutMon is free software under the **[GNU GPL v3 (or later)](LICENSE)**. Copyright (C) 2018-2023 Martin Lukasek, Copyright (C) 2021-2026 Patrick Sonnerat and contributors.

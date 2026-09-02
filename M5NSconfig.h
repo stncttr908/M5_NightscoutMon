@@ -40,7 +40,7 @@ struct tConfig {
   int snd_no_readings = 20;
   int snd_loop_error = 1; 
   int snd_warning_at_startup = 1;
-  int snd_alarm_at_startup =0;
+  int snd_alarm_at_startup = 0;
   char warning_music[64];
   int warning_volume = 30;
   char alarm_music[64];
@@ -58,12 +58,23 @@ struct tConfig {
   int brightness1, brightness2, brightness3;
   int date_format = 0; // 0 = dd.mm., 1 = MM/DD
   int time_format = 0; // 0 = 24 Hours, 1 = am/pm
+  int night_mode_enabled = 0; // 0 = off, 1 = on
+  char night_mode_start[8] = "22:00"; // HH:MM start of night mode
+  char night_mode_end[8] = "07:00"; // HH:MM end of night mode
+  int night_mode_brightness = 10; // 1-100 brightness intensity in night mode
   int display_rotation = 1; // 1 = buttons down, 3 = buttons up, 5 = mirror buttons up, 7 = mirror buttons down
   int invert_display = -1; // -1 = not defined, no not call M5.Lcd.invertDisplay(), 0 or 1 call M5.Lcd.invertDisplay(parameter value)
   int temperature_unit = 1; // 1 = CELSIUS, 2 = KELVIN, 3= FAHRENHEIT
   int dev_mode = 0; // developer mode, do not use, does strange things and changes often ;-)
   int disable_web_server = 0; // 1 = disable internal web server
   bool is_task_bootstrapping = 0; //  1 = task is to bootstrap
+  int mqtt_enabled = 0; // 0 = off, 1 = on
+  char mqtt_server[64] = "";
+  int mqtt_port = 1883;
+  char mqtt_user[64] = "";
+  char mqtt_pass[64] = "";
+  char mqtt_topic_prefix[64] = "m5ns";
+  int mqtt_ha_discovery = 1; // 1 = enable Home Assistant discovery
   char wlanssid[10][64];
   char wlanpass[10][64];
 } ;
