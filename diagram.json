@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "author": "Antigravity",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-ili9341",
+      "id": "lcd",
+      "top": -80,
+      "left": 220,
+      "rotate": 270,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    [ "esp:D23", "lcd:MOSI", "green", [ "h0", "v0" ] ],
+    [ "esp:D18", "lcd:SCK", "green", [ "h0", "v0" ] ],
+    [ "esp:D5", "lcd:CS", "blue", [ "h0", "v0" ] ],
+    [ "esp:D15", "lcd:D/C", "yellow", [ "h0", "v0" ] ],
+    [ "esp:3V3", "lcd:VCC", "red", [ "h0", "v0" ] ],
+    [ "esp:GND.1", "lcd:GND", "black", [ "h0", "v0" ] ]
+  ]
+}

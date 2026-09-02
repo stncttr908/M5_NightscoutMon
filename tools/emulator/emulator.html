@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M5Stack Core2 Virtual Emulator - M5_NightscoutMon</title>
+<style>
+  :root {
+    --bg-main: #0a0f1d;
+    --card-bg: #111827;
+    --border-color: #1f293d;
+    --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg-main);
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    margin: 0 0 6px 0;
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  .header p {
+    margin: 0;
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
+  .main-layout {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    max-width: 1050px;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* Hardware Core2 Frame */
+  .device-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .core2-case {
+    width: 380px;
+    height: 380px;
+    background: #1e2430;
+    border-radius: 36px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 2px 4px rgba(255,255,255,0.1), 0 0 0 4px #0f141f;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    user-select: none;
+  }
+  .brand-logo {
+    font-size: 11px;
+    font-weight: 800;
+    color: #475569;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+  .lcd-glass {
+    width: 324px;
+    height: 244px;
+    background: #000000;
+    border: 2px solid #334155;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.9);
+  }
+  #screen {
+    width: 320px;
+    height: 240px;
+    display: block;
+    cursor: pointer;
+    background: #000;
+  }
+
+  /* Capacitive Touch Bottom Buttons */
+  .bezel-buttons {
+    display: flex;
+    width: 320px;
+    justify-content: space-around;
+    margin-top: 18px;
+  }
+  .bezel-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid #334155;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: rgba(255,255,255,0.02);
+    transition: all 0.15s;
+  }
+  .bezel-btn:hover {
+    border-color: var(--accent);
+    background: rgba(56, 189, 248, 0.15);
+  }
+  .bezel-btn:active {
+    transform: scale(0.92);
+    background: var(--accent);
+  }
+  .bezel-btn::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #475569;
+  }
+
+  /* Sidebar Controls */
+  .controls-panel {
+    flex: 1;
+    min-width: 320px;
+    max-width: 440px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .panel-title {
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin: 0;
+  }
+  .ctrl-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ctrl-label {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+  }
+  .ctrl-row {
+    display: flex;
+    gap: 8px;
+  }
+  select, input[type="range"], input[type="number"], button {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    outline: none;
+  }
+  select { width: 100%; cursor: pointer; }
+  input[type="range"] {
+    width: 100%;
+    padding: 0;
+    height: 6px;
+    cursor: pointer;
+  }
+  .btn-primary {
+    background: #0284c7;
+    border: 1px solid #38bdf8;
+    color: #ffffff;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: #0369a1; }
+  .btn-secondary {
+    background: #1e293b;
+    border: 1px solid #475569;
+    color: #94a3b8;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-secondary:hover { background: #334155; color: #fff; }
+
+  .page-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .page-pill {
+    flex: 1;
+    min-width: 44px;
+    text-align: center;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 5px 2px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #94a3b8;
+  }
+  .page-pill.active {
+    background: #0284c7;
+    border-color: #38bdf8;
+    color: #ffffff;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-family: monospace;
+    background: #0f172a;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid #1e293b;
+    color: #38bdf8;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>M5Stack Core2 Virtual Emulator</h1>
+  <p>Hardware-accurate 320x240 display renderer, capacitive touch router & live telemetry simulator</p>
+</div>
+
+<div class="main-layout">
+  <!-- Core2 Virtual Hardware -->
+  <div class="device-wrapper">
+    <div class="core2-case">
+      <div class="brand-logo">M5STACK CORE2</div>
+      <div class="lcd-glass">
+        <canvas id="screen" width="320" height="240"></canvas>
+      </div>
+      <div class="bezel-buttons">
+        <div class="bezel-btn" title="BtnA (Brightness / Zoom)" onclick="handleBtnA()"></div>
+        <div class="bezel-btn" title="BtnB (Snooze)" onclick="handleBtnB()"></div>
+        <div class="bezel-btn" title="BtnC (Next Page / Off)" onclick="handleBtnC()"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Controls Sidebar -->
+  <div class="controls-panel">
+    <div class="panel-title">Display Page Navigation</div>
+    <div class="page-pills" id="page-pills">
+      <div class="page-pill active" onclick="setPage(0)">0: Main</div>
+      <div class="page-pill" onclick="setPage(1)">1: BigSGV</div>
+      <div class="page-pill" onclick="setPage(2)">2: Clock</div>
+      <div class="page-pill" onclick="setPage(3)">3: Trends</div>
+      <div class="page-pill" onclick="setPage(4)">4: Stats</div>
+      <div class="page-pill" onclick="setPage(5)">5: Insulin</div>
+      <div class="page-pill" onclick="setPage(6)">6: Logs</div>
+      <div class="page-pill" onclick="setPage(7)">7: QR/OTA</div>
+    </div>
+
+    <div class="panel-title">Mock Telemetry Generator</div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">
+        <span>Glucose Level (SGV)</span>
+        <span id="sgv-val" class="status-badge">95 mg/dL (5.3 mmol/L)</span>
+      </div>
+      <input type="range" id="sgv-slider" min="35" max="350" value="95" oninput="updateSgv(this.value)">
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-group" style="flex:1;">
+        <div class="ctrl-label">Trend Direction</div>
+        <select id="trend-select" onchange="updateTrend(this.value)">
+          <option value="Flat">Flat (&rarr;)</option>
+          <option value="SingleUp">Single Up (&uarr;)</option>
+          <option value="DoubleUp">Double Up (&uArr;)</option>
+          <option value="FortyFiveUp">FortyFive Up (&nearr;)</option>
+          <option value="FortyFiveDown">FortyFive Down (&searr;)</option>
+          <option value="SingleDown">Single Down (&darr;)</option>
+          <option value="DoubleDown">Double Down (&dArr;)</option>
+        </select>
+      </div>
+      <div class="ctrl-group" style="flex:1;">
+        <div class="ctrl-label">Units</div>
+        <select id="units-select" onchange="updateUnits(this.value)">
+          <option value="mgdl">mg/dL</option>
+          <option value="mmol">mmol/L</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-group" style="flex:1;">
+        <div class="ctrl-label">Battery: <span id="bat-val">95%</span></div>
+        <input type="range" id="bat-slider" min="5" max="100" value="95" oninput="updateBat(this.value)">
+      </div>
+      <div class="ctrl-group" style="flex:1;">
+        <div class="ctrl-label">Brightness: <span id="bright-val">40%</span></div>
+        <input type="range" id="bright-slider" min="5" max="100" value="40" oninput="updateBright(this.value)">
+      </div>
+    </div>
+
+    <div class="panel-title">Actions & Snapshots</div>
+    <div class="ctrl-row">
+      <button class="btn-primary" style="flex:1;" onclick="exportScreenshot()">📸 Export Framebuffer PNG</button>
+      <button class="btn-secondary" onclick="toggleNightMode()">🌙 Night Mode</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // State
+  let curPage = 5;
+  let sgvMgDl = 95;
+  let trendDir = "Flat";
+  let showMgDl = true;
+  let battery = 95;
+  let brightness = 40;
+  let nightMode = false;
+
+  // Page 5 Treatments State
+  let insulinType = 0; // 0: Fast, 1: Long
+  let fastDose = 1.0;
+  let longDose = 18.0;
+  let modalActive = false;
+  let modalType = "";
+
+  // Page 3 Trend Zoom State
+  let zoomIndex = 0;
+  const zoomLevels = [3, 6, 12, 24];
+
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d');
+
+  function init() {
+    render();
+    canvas.addEventListener('mousedown', handleCanvasClick);
+  }
+
+  function setPage(p) {
+    curPage = p;
+    modalActive = false;
+    document.querySelectorAll('.page-pill').forEach((el, idx) => {
+      el.className = (idx === p) ? 'page-pill active' : 'page-pill';
+    });
+    render();
+  }
+
+  function handleBtnA() {
+    if (curPage === 3) {
+      zoomIndex = (zoomIndex + 1) % 4;
+    } else {
+      brightness = (brightness >= 100) ? 20 : brightness + 20;
+      document.getElementById('bright-slider').value = brightness;
+      document.getElementById('bright-val').innerText = brightness + '%';
+    }
+    render();
+  }
+
+  function handleBtnB() {
+    alert("Snooze triggered (15 min)!");
+    render();
+  }
+
+  function handleBtnC() {
+    curPage = (curPage + 1) % 8;
+    setPage(curPage);
+  }
+
+  function updateSgv(val) {
+    sgvMgDl = parseInt(val);
+    const mmol = (sgvMgDl / 18.018).toFixed(1);
+    document.getElementById('sgv-val').innerText = `${sgvMgDl} mg/dL (${mmol} mmol/L)`;
+    render();
+  }
+
+  function updateTrend(val) { trendDir = val; render(); }
+  function updateUnits(val) { showMgDl = (val === 'mgdl'); render(); }
+  function updateBat(val) { battery = parseInt(val); document.getElementById('bat-val').innerText = val + '%'; render(); }
+  function updateBright(val) { brightness = parseInt(val); document.getElementById('bright-val').innerText = val + '%'; render(); }
+  function toggleNightMode() { nightMode = !nightMode; render(); }
+
+  function getSuggestedCorrection() {
+    if (sgvMgDl < 120) return 0.5;
+    let diff = sgvMgDl - 100;
+    let raw = diff / 45.0;
+    let rounded = Math.round(raw * 2.0) / 2.0;
+    return Math.max(0.5, Math.min(15.0, rounded));
+  }
+
+  function getSgvColor() {
+    if (sgvMgDl < 70 || sgvMgDl > 250) return '#ef4444'; // Red
+    if (sgvMgDl < 80 || sgvMgDl > 180) return '#eab308'; // Yellow
+    return '#22c55e'; // Green
+  }
+
+  function getTrendArrow() {
+    switch(trendDir) {
+      case "SingleUp": return "\u2191";
+      case "DoubleUp": return "\u21D1";
+      case "FortyFiveUp": return "\u2197";
+      case "FortyFiveDown": return "\u2198";
+      case "SingleDown": return "\u2193";
+      case "DoubleDown": return "\u21D3";
+      default: return "\u2192";
+    }
+  }
+
+  // Canvas Drawing Helpers
+  function clear() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, 320, 240);
+  }
+
+  function drawHeader(title) {
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 22.5);
+    ctx.lineTo(320, 22.5);
+    ctx.stroke();
+
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(title, 8, 15);
+
+    // Center SGV
+    ctx.textAlign = 'center';
+    ctx.fillStyle = getSgvColor();
+    const sgvStr = showMgDl ? `${sgvMgDl} ${getTrendArrow()}` : `${(sgvMgDl/18.018).toFixed(1)} ${getTrendArrow()}`;
+    ctx.fillText(sgvStr, 160, 15);
+
+    // Right Time
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('02:15 AM', 312, 15);
+  }
+
+  function drawBottomBar() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 216, 320, 24);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 216.5);
+    ctx.lineTo(320, 216.5);
+    ctx.stroke();
+
+    // Sun Icon
+    drawSunIcon(45, 220);
+    // Clock Icon
+    drawClockIcon(150, 220);
+    // Door Icon (Light Grey)
+    drawDoorIcon(256, 220);
+  }
+
+  function drawSunIcon(x, y) {
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x+8, y+8, 4, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  function drawClockIcon(x, y) {
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x+8, y+8, 6, 0, Math.PI*2);
+    ctx.moveTo(x+8, y+4);
+    ctx.lineTo(x+8, y+8);
+    ctx.lineTo(x+11, y+8);
+    ctx.stroke();
+  }
+  function drawDoorIcon(x, y) {
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x+3, y+2, 10, 12);
+  }
+
+  function drawSimpleBox(x, y, w, h, label, bg, border, textCol, isBold=true) {
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 5);
+    ctx.fill();
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = textCol;
+    ctx.font = isBold ? 'bold 11px sans-serif' : '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + w/2, y + h/2);
+  }
+
+  // Render Page 5: Rapid Treatments & Insulin Console
+  function renderPage5() {
+    drawHeader("LOG INSULIN");
+    const isFast = (insulinType === 0);
+
+    // 1. Mode Toggle (y: 28..58)
+    drawSimpleBox(10, 28, 145, 30, "Fast Acting", isFast ? "#0f3a7a" : "#0f172a", isFast ? "#38bdf8" : "#1e293b", isFast ? "#fff" : "#94a3b8");
+    drawSimpleBox(165, 28, 145, 30, "Long Acting", !isFast ? "#581c87" : "#0f172a", !isFast ? "#c084fc" : "#1e293b", !isFast ? "#fff" : "#94a3b8");
+
+    // 2. Stepper Card (y: 66..136)
+    ctx.fillStyle = "#090e17";
+    ctx.beginPath();
+    ctx.roundRect(10, 66, 300, 70, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#1e293b";
+    ctx.stroke();
+
+    // Left buttons
+    if (isFast) {
+      drawSimpleBox(15, 72, 44, 58, "-1.0", "#1e293b", "#334155", "#ffffff");
+      drawSimpleBox(63, 72, 44, 58, "-0.5", "#1e293b", "#334155", "#ffffff");
+    } else {
+      drawSimpleBox(15, 72, 44, 58, "-5", "#1e293b", "#334155", "#ffffff");
+      drawSimpleBox(63, 72, 44, 58, "-1", "#1e293b", "#334155", "#ffffff");
+    }
+
+    // Large Center Dose
+    ctx.fillStyle = isFast ? "#38bdf8" : "#c084fc";
+    ctx.font = "bold 26px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const dVal = isFast ? fastDose.toFixed(1) + " U" : longDose.toFixed(0) + " U";
+    ctx.fillText(dVal, 160, isFast ? 88 : 101);
+
+    // Compact Suggestion chip
+    if (isFast) {
+      const sug = getSuggestedCorrection();
+      const isSugActive = (Math.abs(fastDose - sug) < 0.05);
+      drawSimpleBox(128, 108, 64, 22, `~${sug.toFixed(1)}U`, isSugActive ? "#15803d" : "#064e3b", isSugActive ? "#4ade80" : "#22c55e", "#4ade80", true);
+    }
+
+    // Right buttons
+    if (isFast) {
+      drawSimpleBox(213, 72, 44, 58, "+0.5", "#1e293b", "#334155", "#ffffff");
+      drawSimpleBox(261, 72, 44, 58, "+1.0", "#1e293b", "#334155", "#ffffff");
+    } else {
+      drawSimpleBox(213, 72, 44, 58, "+1", "#1e293b", "#334155", "#ffffff");
+      drawSimpleBox(261, 72, 44, 58, "+5", "#1e293b", "#334155", "#ffffff");
+    }
+
+    // 3. Full-Width Action Button (y: 146..204)
+    const actLabel = isFast ? `LOG ${fastDose.toFixed(1)} U FAST ACTING` : `LOG ${longDose.toFixed(0)} U LONG ACTING`;
+    const actBg = isFast ? "#0f3a7a" : "#581c87";
+    const actBorder = isFast ? "#38bdf8" : "#c084fc";
+    drawSimpleBox(10, 146, 300, 58, actLabel, actBg, actBorder, "#ffffff", true);
+
+    drawBottomBar();
+
+    // 4. Modal Overlay if Active
+    if (modalActive) {
+      ctx.fillStyle = "rgba(0,0,0,0.85)";
+      ctx.fillRect(0, 0, 320, 240);
+
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath();
+      ctx.roundRect(16, 26, 288, 172, 8);
+      ctx.fill();
+      ctx.strokeStyle = isFast ? "#38bdf8" : "#c084fc";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = isFast ? "#38bdf8" : "#c084fc";
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("CONFIRM INSULIN LOG", 160, 48);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 20px sans-serif";
+      const mDose = isFast ? `${fastDose.toFixed(1)} U Fast Acting` : `${longDose.toFixed(0)} U Long Acting`;
+      ctx.fillText(mDose, 160, 80);
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "11px sans-serif";
+      ctx.fillText("Send dose to Nightscout?", 160, 108);
+
+      drawSimpleBox(28, 130, 124, 52, "\u2713 CONFIRM", "#15803d", "#4ade80", "#fff");
+      drawSimpleBox(168, 130, 124, 52, "\u2717 CANCEL", "#991b1b", "#ef4444", "#fff");
+    }
+  }
+
+  // Render Page 0: Main Dashboard Mock
+  function renderPage0() {
+    drawHeader("NIGHTSCOUT");
+    ctx.fillStyle = getSgvColor();
+    ctx.font = "bold 58px monospace";
+    ctx.textAlign = "left";
+    const valStr = showMgDl ? `${sgvMgDl}` : `${(sgvMgDl/18.018).toFixed(1)}`;
+    ctx.fillText(valStr, 12, 90);
+
+    ctx.font = "bold 28px sans-serif";
+    ctx.fillText(getTrendArrow(), 150, 90);
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("+2 mg/dL in 5m", 12, 115);
+    ctx.fillText("IOB: 1.2U   COB: 15g", 12, 135);
+
+    // Mini Sparkline Graph
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(12, 185);
+    ctx.lineTo(80, 175);
+    ctx.lineTo(150, 190);
+    ctx.lineTo(220, 165);
+    ctx.lineTo(308, 170);
+    ctx.stroke();
+
+    drawBottomBar();
+  }
+
+  // Render Page 3: Extended Trends Mock
+  function renderPage3() {
+    drawHeader(`TRENDS (${zoomLevels[zoomIndex]}H)`);
+    ctx.strokeStyle = "#334155";
+    ctx.strokeRect(32, 28, 280, 168);
+
+    // Target threshold lines
+    ctx.strokeStyle = "#eab308";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(32, 70); ctx.lineTo(312, 70);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.moveTo(32, 160); ctx.lineTo(312, 160);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Curve
+    ctx.strokeStyle = "#22c55e";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(35, 120);
+    ctx.bezierCurveTo(100, 140, 200, 90, 310, 110);
+    ctx.stroke();
+
+    drawBottomBar();
+  }
+
+  // Render Page 4: Clinical Stats Mock
+  function renderPage4() {
+    drawHeader("AGP CLINICAL STATS");
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("TIME IN RANGE", 12, 40);
+
+    // TIR Bar
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(12, 50, 200, 18);
+    ctx.fillStyle = "#eab308";
+    ctx.fillRect(212, 50, 60, 18);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(272, 50, 36, 18);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("In Range (70-180): 82%", 12, 90);
+    ctx.fillText("Mean SGV: 112 mg/dL", 12, 110);
+    ctx.fillText("GMI / eA1C: 6.0%", 12, 130);
+    ctx.fillText("CV% (Variability): 28.4%", 12, 150);
+
+    drawBottomBar();
+  }
+
+  function render() {
+    clear();
+    switch(curPage) {
+      case 0: renderPage0(); break;
+      case 3: renderPage3(); break;
+      case 4: renderPage4(); break;
+      case 5: renderPage5(); break;
+      default:
+        drawHeader(`PAGE ${curPage}`);
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "14px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(`Page ${curPage} Simulator View`, 160, 120);
+        drawBottomBar();
+        break;
+    }
+  }
+
+  function handleCanvasClick(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (curPage === 5) {
+      // Modal click
+      if (modalActive) {
+        if (x >= 28 && x <= 152 && y >= 130 && y <= 182) {
+          alert(`Logged ${insulinType===0 ? fastDose.toFixed(1)+'U Fast Acting' : longDose.toFixed(0)+'U Long Acting'} to Nightscout!`);
+          modalActive = false;
+          render();
+          return;
+        }
+        if (x >= 168 && x <= 292 && y >= 130 && y <= 182) {
+          modalActive = false;
+          render();
+          return;
+        }
+        modalActive = false;
+        render();
+        return;
+      }
+
+      // Mode Toggle
+      if (y >= 26 && y <= 60) {
+        if (x >= 10 && x <= 155) insulinType = 0;
+        if (x >= 165 && x <= 310) insulinType = 1;
+        render();
+        return;
+      }
+
+      // Stepper & Suggestion
+      if (y >= 66 && y <= 138) {
+        // Suggestion chip
+        if (insulinType === 0 && x >= 115 && x <= 205 && y >= 104 && y <= 136) {
+          fastDose = getSuggestedCorrection();
+          render();
+          return;
+        }
+        if (insulinType === 0) {
+          if (x >= 12 && x <= 60) fastDose = Math.max(0.5, Math.round((fastDose - 1.0)*2)/2);
+          if (x >= 61 && x <= 108) fastDose = Math.max(0.5, Math.round((fastDose - 0.5)*2)/2);
+          if (x >= 212 && x <= 259) fastDose = Math.min(50.0, Math.round((fastDose + 0.5)*2)/2);
+          if (x >= 260 && x <= 308) fastDose = Math.min(50.0, Math.round((fastDose + 1.0)*2)/2);
+        } else {
+          if (x >= 12 && x <= 60) longDose = Math.max(1.0, longDose - 5);
+          if (x >= 61 && x <= 108) longDose = Math.max(1.0, longDose - 1);
+          if (x >= 212 && x <= 259) longDose = Math.min(100.0, longDose + 1);
+          if (x >= 260 && x <= 308) longDose = Math.min(100.0, longDose + 5);
+        }
+        render();
+        return;
+      }
+
+      // Action Button
+      if (y >= 142 && y <= 204) {
+        modalActive = true;
+        render();
+        return;
+      }
+    }
+
+    // Bottom Bezel Bar
+    if (y >= 216) {
+      if (x < 106) handleBtnA();
+      else if (x < 213) handleBtnB();
+      else handleBtnC();
+    }
+  }
+
+  function exportScreenshot() {
+    const link = document.createElement('a');
+    link.download = `m5_screen_page${curPage}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  window.onload = init;
+</script>
+
+</body>
+</html>

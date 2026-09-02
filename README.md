@@ -178,6 +178,39 @@ Displays last 10 record errors and total number of errors record since last rest
 Shows a QR code encoding the device's local IP address (`http://a.b.c.d`). Scan it with a phone camera to open the device's web configuration page directly, without needing to type in an address or rely on `<name>.local` (which doesn't work reliably if several M5NS devices are on the same network). If WiFi is disconnected or the internal web server is disabled in M5NS.INI, the page shows a message instead of the QR code. On entry the device checks GitHub for a newer firmware release; if one is available, the bottom row shows **UPDATE** and the middle button installs it directly from the device, with no browser needed.
 
 Neither the Error Log page nor this page show the loop/basal status row (`L: ... B: ...`) that appears on the other pages - it isn't relevant here, and on this page the middle button has a different job.
+
+### Local REST API & Home Assistant / MQTT Integration
+
+#### Non-Persistent REST API Endpoints
+All API endpoints take effect immediately in RAM without writing to NVS flash or SD card:
+
+* `GET /api/status`: Unified JSON telemetry (SGV, delta, direction, screen, brightness, page, snooze, battery, power source).
+* `GET /api/power`: Real-time PMIC power source (`mains`/`battery`), charging status, battery percentage, and voltage.
+* `GET /api/screen?val=<on|off|toggle>`: Control screen backlight while background loops and network polling stay active.
+* `GET /api/brightness?val=<0-100>`: Direct backlight brightness level (0-100%).
+* `GET /api/action/brightness`: Emulate tapping the left touch button (cycle brightness presets).
+* `GET /api/page?val=<0-3>`: Jump directly to a specific UI page.
+* `GET /api/action/page`: Emulate tapping the right touch button (cycle page).
+* `GET /api/action/snooze`: Emulate tapping the middle touch button (trigger/extend alarm snooze).
+* `GET /api/refresh?interval=<min>` or `seconds=<sec>`: Dynamic runtime polling interval control.
+
+#### MQTT & Home Assistant Auto-Discovery
+Enable MQTT in `M5NS.INI` or via the Web Config portal:
+
+```ini
+mqtt_enabled = 1
+mqtt_server = 10.10.2.1
+mqtt_port = 1883
+mqtt_user = 
+mqtt_pass = 
+mqtt_topic_prefix = m5ns
+mqtt_ha_discovery = 1
+```
+
+* **Home Assistant Integration**: Automatically discovers Glucose (SGV), Delta, Trend Direction, Battery %, Voltage, Power Source, Charging state, Screen Power switch, Brightness control, and Snooze action button with zero YAML.
+* **Command Topics**: `<prefix>/<deviceId>/screen/set`, `.../brightness/set`, `.../page/set`, `.../snooze/set`, `.../refresh/set`.
+* **State Topic**: `<prefix>/<deviceId>/state` (full JSON) and individual subtopics.
+
 <br/>
 
 ### Buttons

@@ -23,4 +23,18 @@ void handleSaveConfig();
 void handleClearConfigFlash();
 void handleNotFound();
 
+// REST API Endpoints
+void handleApiRefresh();
+void handleApiActionBrightness();
+void handleApiBrightness();
+void handleApiActionPage();
+void handleApiPage();
+void handleApiActionSnooze();
+void handleApiScreen();
+void handleApiPower();
+void handleApiStatus();
+void handleApiNightMode();
+void handleApiTreatment();
+void handleApiScreenshot();
+
 #endif

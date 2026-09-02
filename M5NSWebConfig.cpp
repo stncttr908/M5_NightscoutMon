@@ -17,7 +17,9 @@
 #include "M5NSWebConfig.h"
 #include "M5NSDexcom.h"
 #include "M5NSLibre.h"
+#include "M5NSTreatments.h"
 #include "externs.h"
+#include <esp32/rom/miniz.h>
 
 // OTA firmware is served straight from this repo (raw.githubusercontent.com, master
 // branch, Binaries/ folder). Variant selection mirrors the three images actually
@@ -280,15 +282,19 @@ void handleRoot() {
   rowEdit(message, "User name", cfg.userName, "userName", "di");
   rowSeg(message, "Display units", cfg.show_mgdl, "show_mgdl", "di", "mg/dL", "mmol/L");
   {
-    char pageLabels[8][4];
-    const char* pageOpts[8]; int pageVals[8];
-    int n = 0;
-    for (int p = 0; p <= maxPage && p < 8; p++) {
-      snprintf(pageLabels[p], sizeof(pageLabels[p]), "%d", p);
-      pageOpts[p] = pageLabels[p];
-      pageVals[p] = p;
-      n++;
-    }
+    const char* pageOpts[8] = {
+      "0: Main Dashboard",
+      "1: Large Font View",
+      "2: Clock & Environment",
+      "3: Extended Trend Graph",
+      "4: Clinical AGP & TIR",
+      "5: Rapid Treatments (Insulin)",
+      "6: Error Log",
+      "7: Web Config QR"
+    };
+    int pageVals[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+    int n = maxPage + 1;
+    if (n > 8) n = 8;
     rowSelect(message, "Default page", "default_page", "di", pageOpts, pageVals, n, cfg.default_page);
   }
   rowSeg(message, "Show time", cfg.show_current_time, "show_current_time", "di", "current time", "last data");
@@ -306,6 +312,11 @@ void handleRoot() {
     rowSelect(message, "Display inversion", "invert_display", "di", invOpts, invVals, 3, cfg.invert_display);
   }
   rowEdit(message, "Brightness steps", String(cfg.brightness1) + ", " + String(cfg.brightness2) + ", " + String(cfg.brightness3), "brightness", "di");
+  rowToggle(message, "Night mode schedule", cfg.night_mode_enabled, "night_mode_enabled", "di");
+  if (cfg.night_mode_enabled) {
+    rowEdit(message, "Night window", String(cfg.night_mode_start) + " - " + String(cfg.night_mode_end), "night_mode_window", "di");
+    rowEdit(message, "Night brightness", String(cfg.night_mode_brightness) + "%", "night_mode_brightness", "di");
+  }
   {
     const char* lineOpts[4] = {"sensor info","button function icons","loop info + basal","openaps info + basal"};
     const int lineVals[4] = {0,1,2,3};
@@ -366,6 +377,13 @@ void handleRoot() {
   if (wlans_defined_count < 1) {
     rowEdit(message, "WiFi Configuration", "(none)", "wlans", "wf");
   }
+  message += "</details>\r\n";
+
+  // ---- MQTT & Home Assistant ----
+  detailsOpen(message, "mq", "MQTT & Home Assistant", sec);
+  rowToggle(message, "MQTT enabled", cfg.mqtt_enabled, "mqtt_enabled", "mq");
+  rowEdit(message, "Broker & credentials", (cfg.mqtt_server[0] != 0) ? (String(cfg.mqtt_server) + ":" + String(cfg.mqtt_port)) : String("(none)"), "mqtt", "mq");
+  rowToggle(message, "Home Assistant discovery", cfg.mqtt_ha_discovery, "mqtt_ha_discovery", "mq");
   message += "</details>\r\n";
 
   // ---- Hardware add-ons ----
@@ -842,6 +860,10 @@ void handleSwitchConfig() {
           pixels.show();
         }
       }
+      else if(param.equals("night_mode_enabled")) {
+        cfg.night_mode_enabled = 1 - cfg.night_mode_enabled;
+        checkNightMode();
+      }
       else if(param.equals("vibration_mode")) {
         cfg.vibration_mode++;
         if(cfg.vibration_mode>1) {
@@ -866,6 +888,15 @@ void handleSwitchConfig() {
         // inverse of disable_web_server itself.
         if(haveVal) cfg.disable_web_server = (val==0);
         else cfg.disable_web_server = !cfg.disable_web_server;
+      }
+      else if(param.equals("mqtt_enabled")) {
+        if(haveVal) cfg.mqtt_enabled = (val!=0);
+        else cfg.mqtt_enabled = !cfg.mqtt_enabled;
+        mqttInit();
+      }
+      else if(param.equals("mqtt_ha_discovery")) {
+        if(haveVal) cfg.mqtt_ha_discovery = (val!=0);
+        else cfg.mqtt_ha_discovery = !cfg.mqtt_ha_discovery;
       }
     }
   }
@@ -913,6 +944,13 @@ void handleEditConfigItem() {
       editRow(message, "LibreLinkUp email", "<input type=\"text\" name=\"libre_user\" value=\"" + String(cfg.libre_user) + "\" size=\"28\" maxlength=\"63\">", "use a LibreLinkUp follower account, not the LibreView account itself");
       editRow(message, "LibreLinkUp password", "<input type=\"password\" name=\"libre_pass\" value=\"" + String(cfg.libre_pass) + "\" size=\"28\" maxlength=\"63\">", "stored on the device SD card / flash in plain text");
     }
+    if(String(w3srv.arg(0)).equals("mqtt")) {
+      editRow(message, "Broker host/IP", "<input type=\"text\" name=\"mqtt_server\" value=\"" + String(cfg.mqtt_server) + "\" size=\"28\" maxlength=\"63\">", "e.g. 10.10.2.1 or homeassistant.local");
+      editRow(message, "Broker port", "<input type=\"text\" name=\"mqtt_port\" value=\"" + String(cfg.mqtt_port) + "\" size=\"6\" maxlength=\"5\">", "default 1883");
+      editRow(message, "Username", "<input type=\"text\" name=\"mqtt_user\" value=\"" + String(cfg.mqtt_user) + "\" size=\"28\" maxlength=\"63\">", "optional, leave blank if none");
+      editRow(message, "Password", "<input type=\"password\" name=\"mqtt_pass\" value=\"" + String(cfg.mqtt_pass) + "\" size=\"28\" maxlength=\"63\">", "stored on device in plain text");
+      editRow(message, "Topic prefix", "<input type=\"text\" name=\"mqtt_topic_prefix\" value=\"" + String(cfg.mqtt_topic_prefix) + "\" size=\"20\" maxlength=\"63\">", "default: m5ns");
+    }
     if(String(w3srv.arg(0)).equals("deviceName")) {
       editRow(message, "Device name", "<input type=\"text\" name=\"deviceName\" value=\"" + String(cfg.deviceName) + "\" size=\"12\" maxlength=\"32\">.local");
       message += "<p class=\"warn\">Applied after Save - the device will restart automatically.</p>\r\n";
@@ -949,6 +987,13 @@ void handleEditConfigItem() {
       editRow(message, "Step 1 (default)", "<input type=\"text\" name=\"brightness1\" value=\"" + String(cfg.brightness1) + "\" size=\"3\" maxlength=\"3\"> %");
       editRow(message, "Step 2", "<input type=\"text\" name=\"brightness2\" value=\"" + String(cfg.brightness2) + "\" size=\"3\" maxlength=\"3\"> %");
       editRow(message, "Step 3", "<input type=\"text\" name=\"brightness3\" value=\"" + String(cfg.brightness3) + "\" size=\"3\" maxlength=\"3\"> %");
+    }
+    if(String(w3srv.arg(0)).equals("night_mode_window")) {
+      editRow(message, "Night start time", "<input type=\"text\" name=\"night_mode_start\" value=\"" + String(cfg.night_mode_start) + "\" size=\"5\" maxlength=\"5\">", "24h HH:MM");
+      editRow(message, "Night end time", "<input type=\"text\" name=\"night_mode_end\" value=\"" + String(cfg.night_mode_end) + "\" size=\"5\" maxlength=\"5\">", "24h HH:MM");
+    }
+    if(String(w3srv.arg(0)).equals("night_mode_brightness")) {
+      editRow(message, "Night brightness", "<input type=\"text\" name=\"night_mode_brightness\" value=\"" + String(cfg.night_mode_brightness) + "\" size=\"3\" maxlength=\"3\"> %", "1-100");
     }
     if(String(w3srv.arg(0)).equals("led_strip")) {
       editRow(message, "LED strip pin", "<input type=\"text\" name=\"LED_strip_pin\" value=\"" + String(cfg.LED_strip_pin) + "\" size=\"3\" maxlength=\"3\">", "15 = Fire internal, 26 = PORT B, 17 = PORT C (21/PORT A collides with I2C)");
@@ -1038,6 +1083,23 @@ void handleGetEditConfigItem() {
       strncpy(cfg.libre_pass, String(w3srv.arg(i)).c_str(), 64);
       libreResetSession();
     }
+    if(String(w3srv.argName(i)).equals("mqtt_server")) {
+      strncpy(cfg.mqtt_server, String(w3srv.arg(i)).c_str(), 64);
+      mqttInit();
+    }
+    if(String(w3srv.argName(i)).equals("mqtt_port")) {
+      cfg.mqtt_port = String(w3srv.arg(i)).toInt();
+      mqttInit();
+    }
+    if(String(w3srv.argName(i)).equals("mqtt_user")) {
+      strncpy(cfg.mqtt_user, String(w3srv.arg(i)).c_str(), 64);
+    }
+    if(String(w3srv.argName(i)).equals("mqtt_pass")) {
+      strncpy(cfg.mqtt_pass, String(w3srv.arg(i)).c_str(), 64);
+    }
+    if(String(w3srv.argName(i)).equals("mqtt_topic_prefix")) {
+      strncpy(cfg.mqtt_topic_prefix, String(w3srv.arg(i)).c_str(), 64);
+    }
     if(String(w3srv.argName(i)).equals("deviceName")) {
       String newVal = String(w3srv.arg(i));
       if(!newVal.equals(cfg.deviceName)) restartPending = true;
@@ -1121,6 +1183,20 @@ void handleGetEditConfigItem() {
         M5.Display.setBrightness(map(lcdBrightness, 0, 100, 0, 255));
       }
       cfg.brightness3 = String(w3srv.arg(i)).toInt();
+    }
+    if(String(w3srv.argName(i)).equals("night_mode_start")) {
+      strncpy(cfg.night_mode_start, String(w3srv.arg(i)).c_str(), 8);
+      checkNightMode();
+    }
+    if(String(w3srv.argName(i)).equals("night_mode_end")) {
+      strncpy(cfg.night_mode_end, String(w3srv.arg(i)).c_str(), 8);
+      checkNightMode();
+    }
+    if(String(w3srv.argName(i)).equals("night_mode_brightness")) {
+      cfg.night_mode_brightness = String(w3srv.arg(i)).toInt();
+      if(cfg.night_mode_brightness < 1) cfg.night_mode_brightness = 1;
+      if(cfg.night_mode_brightness > 100) cfg.night_mode_brightness = 100;
+      checkNightMode();
     }
     if(String(w3srv.argName(i)).equals("LED_strip_pin")) {
       int oldpin = cfg.LED_strip_pin;
@@ -1314,6 +1390,17 @@ static void persistConfigToDisk() {
     dstFil.print("\r\n");
     dstFil.print("developer_mode = "); dstFil.print(cfg.dev_mode); dstFil.print("\r\n");
     dstFil.print("\r\n");
+    dstFil.print("; MQTT & Home Assistant Integration\r\n");
+    dstFil.print("mqtt_enabled = "); dstFil.print(cfg.mqtt_enabled); dstFil.print("\r\n");
+    dstFil.print("mqtt_server = "); dstFil.print(cfg.mqtt_server); dstFil.print("\r\n");
+    dstFil.print("mqtt_port = "); dstFil.print(cfg.mqtt_port); dstFil.print("\r\n");
+    dstFil.print("mqtt_user = "); dstFil.print(cfg.mqtt_user); dstFil.print("\r\n");
+    if(strlen(cfg.mqtt_pass) > 0) {
+      dstFil.print("mqtt_pass = "); dstFil.print(cfg.mqtt_pass); dstFil.print("\r\n");
+    }
+    dstFil.print("mqtt_topic_prefix = "); dstFil.print(cfg.mqtt_topic_prefix); dstFil.print("\r\n");
+    dstFil.print("mqtt_ha_discovery = "); dstFil.print(cfg.mqtt_ha_discovery); dstFil.print("\r\n");
+    dstFil.print("\r\n");
     for(int i=0; i<10; i++) {
       if(cfg.wlanssid[i][0] != 0) {
         dstFil.print("[wlan"); dstFil.print(i); dstFil.print("]\r\n");
@@ -1399,3 +1486,302 @@ void handleNotFound() {
   }
   w3srv.send(404, "text/plain", message);
 }
+
+// ---- REST API Handlers --------------------------------------------------------
+
+void handleApiRefresh() {
+  if (w3srv.hasArg("interval")) {
+    int interval = w3srv.arg("interval").toInt();
+    if (interval <= 0) {
+      w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid interval parameter (must be > 0)\"}");
+      return;
+    }
+    refreshIntervalSec = (uint32_t)interval * 60;
+    resetNextRead();
+  } else if (w3srv.hasArg("seconds")) {
+    int seconds = w3srv.arg("seconds").toInt();
+    if (seconds <= 0) {
+      w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid seconds parameter (must be > 0)\"}");
+      return;
+    }
+    refreshIntervalSec = (uint32_t)seconds;
+    resetNextRead();
+  }
+  
+  String res = "{\"status\":\"ok\",\"refresh_interval\":" + String(refreshIntervalSec) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiActionBrightness() {
+  cycleBrightness();
+  String res = "{\"status\":\"ok\",\"brightness\":" + String(lcdBrightness) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiBrightness() {
+  if (!w3srv.hasArg("val")) {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'val' parameter (0-100)\"}");
+    return;
+  }
+  int val = w3srv.arg("val").toInt();
+  if (val < 0 || val > 100) {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid val parameter (must be 0-100)\"}");
+    return;
+  }
+  setBrightness((uint8_t)val);
+  String res = "{\"status\":\"ok\",\"brightness\":" + String(lcdBrightness) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiActionPage() {
+  cyclePage();
+  String res = "{\"status\":\"ok\",\"page\":" + String(dispPage) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiPage() {
+  if (!w3srv.hasArg("val")) {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'val' parameter\"}");
+    return;
+  }
+  int val = w3srv.arg("val").toInt();
+  if (val < 0 || val > maxPage) {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid page index (must be 0-" + String(maxPage) + ")\"}");
+    return;
+  }
+  setPage(val);
+  String res = "{\"status\":\"ok\",\"page\":" + String(dispPage) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiActionSnooze() {
+  triggerSnooze();
+  struct tm timeinfo;
+  bool timeOK = getLocalTime(&timeinfo);
+  bool snoozeActive = (snoozeMult > 0);
+  if (timeOK && snoozeUntil <= mktime(&timeinfo)) {
+    snoozeActive = false;
+  }
+  String res = "{\"status\":\"ok\",\"snooze_active\":" + String(snoozeActive ? "true" : "false") +
+               ",\"snooze_multiplier\":" + String(snoozeMult) +
+               ",\"snooze_until\":" + String((uint32_t)snoozeUntil) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiScreen() {
+  if (!w3srv.hasArg("val")) {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'val' parameter (on|off|toggle)\"}");
+    return;
+  }
+  String val = w3srv.arg("val");
+  val.toLowerCase();
+  if (val.equals("on")) {
+    setScreenPower(true);
+  } else if (val.equals("off")) {
+    setScreenPower(false);
+  } else if (val.equals("toggle")) {
+    toggleScreenPower();
+  } else {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid val parameter. Must be 'on', 'off', or 'toggle'\"}");
+    return;
+  }
+  String res = "{\"status\":\"ok\",\"screen\":\"" + String(screenOn ? "on" : "off") + "\",\"brightness\":" + String(lcdBrightness) + "}";
+  w3srv.send(200, "application/json", res);
+}
+
+void handleApiPower() {
+  String powerSource;
+  bool isCharging = false;
+  int batPercentage = 0;
+  float batVoltage = 0.0f;
+  
+  getPowerTelemetry(powerSource, isCharging, batPercentage, batVoltage);
+  
+  char buf[128];
+  snprintf(buf, sizeof(buf), "{\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d,\"battery_voltage\":%.2f}",
+           powerSource.c_str(), isCharging ? "true" : "false", batPercentage, batVoltage);
+  w3srv.send(200, "application/json", buf);
+}
+
+void handleApiStatus() {
+  String powerSource;
+  bool isCharging = false;
+  int batPercentage = 0;
+  float batVoltage = 0.0f;
+  
+  getPowerTelemetry(powerSource, isCharging, batPercentage, batVoltage);
+  
+  struct tm timeinfo;
+  bool timeOK = getLocalTime(&timeinfo);
+  bool snoozeActive = (snoozeMult > 0);
+  if (timeOK && snoozeUntil <= mktime(&timeinfo)) {
+    snoozeActive = false;
+  }
+  
+  float currentSgv = cfg.show_mgdl ? ns.sensSgv : ns.sensSgvMgDl;
+  
+  char buf[320];
+  if (cfg.show_mgdl) {
+    snprintf(buf, sizeof(buf),
+             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"sgv\":%.1f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
+             screenOn ? "on" : "off", lcdBrightness, dispPage, (unsigned long)refreshIntervalSec,
+             snoozeActive ? "true" : "false", currentSgv,
+             isNightModeActive() ? "true" : "false",
+             cfg.night_mode_enabled ? "true" : "false",
+             powerSource.c_str(),
+             isCharging ? "true" : "false", batPercentage);
+  } else {
+    snprintf(buf, sizeof(buf),
+             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"sgv\":%.0f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
+             screenOn ? "on" : "off", lcdBrightness, dispPage, (unsigned long)refreshIntervalSec,
+             snoozeActive ? "true" : "false", currentSgv,
+             isNightModeActive() ? "true" : "false",
+             cfg.night_mode_enabled ? "true" : "false",
+             powerSource.c_str(),
+             isCharging ? "true" : "false", batPercentage);
+  }
+  w3srv.send(200, "application/json", buf);
+}
+
+void handleApiNightMode() {
+  if (w3srv.hasArg("enabled")) {
+    int en = w3srv.arg("enabled").toInt();
+    cfg.night_mode_enabled = (en == 1) ? 1 : 0;
+    saveConfigToFlash(&cfg);
+    checkNightMode();
+  }
+  if (w3srv.hasArg("brightness")) {
+    int b = w3srv.arg("brightness").toInt();
+    if (b >= 1 && b <= 100) {
+      cfg.night_mode_brightness = b;
+      saveConfigToFlash(&cfg);
+      if (isNightModeActive()) {
+        setBrightness((uint8_t)b);
+      }
+    }
+  }
+  if (w3srv.hasArg("start")) {
+    strlcpy(cfg.night_mode_start, w3srv.arg("start").c_str(), 8);
+    saveConfigToFlash(&cfg);
+    checkNightMode();
+  }
+  if (w3srv.hasArg("end")) {
+    strlcpy(cfg.night_mode_end, w3srv.arg("end").c_str(), 8);
+    saveConfigToFlash(&cfg);
+    checkNightMode();
+  }
+
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+           "{\"status\":\"ok\",\"night_mode_enabled\":%s,\"night_mode_active\":%s,\"night_mode_start\":\"%s\",\"night_mode_end\":\"%s\",\"night_mode_brightness\":%d}",
+           cfg.night_mode_enabled ? "true" : "false",
+           isNightModeActive() ? "true" : "false",
+           cfg.night_mode_start,
+           cfg.night_mode_end,
+           cfg.night_mode_brightness);
+  w3srv.send(200, "application/json", buf);
+}
+
+void handleApiTreatment() {
+  float insulin = 0.0f;
+  float carbs = 0.0f;
+  String eventType = "Correction Bolus";
+  String notes = "API Request";
+
+  if (w3srv.hasArg("insulin")) {
+    insulin = w3srv.arg("insulin").toFloat();
+  }
+  if (w3srv.hasArg("carbs")) {
+    carbs = w3srv.arg("carbs").toFloat();
+    if (!w3srv.hasArg("eventType")) {
+      eventType = "Carb Correction";
+    }
+  }
+  if (w3srv.hasArg("eventType")) {
+    eventType = w3srv.arg("eventType");
+  }
+  if (w3srv.hasArg("notes")) {
+    notes = w3srv.arg("notes");
+  }
+
+  if (insulin <= 0.001f && carbs <= 0.001f && !w3srv.hasArg("eventType")) {
+    w3srv.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing 'insulin' or 'carbs' parameter\"}");
+    return;
+  }
+
+  String resultMsg;
+  bool ok = postNightscoutTreatment(eventType.c_str(), insulin, carbs, notes.c_str(), resultMsg);
+
+  DynamicJsonDocument doc(256);
+  doc["status"] = ok ? "ok" : "error";
+  doc["message"] = resultMsg;
+  doc["insulin"] = serialized(String(insulin, 1));
+  doc["carbs"] = (int)round(carbs);
+  doc["eventType"] = eventType;
+
+  String res;
+  serializeJson(doc, res);
+  w3srv.send(ok ? 200 : 502, "application/json", res);
+}
+
+void handleApiScreenshot() {
+  uint32_t width = M5.Lcd.width();
+  uint32_t height = M5.Lcd.height();
+  uint32_t rowSize = (width * 3 + 3) & ~3;
+  uint32_t imageSize = rowSize * height;
+  uint32_t fileSize = 54 + imageSize;
+
+  uint8_t header[54] = {
+    'B', 'M',
+    (uint8_t)(fileSize), (uint8_t)(fileSize >> 8), (uint8_t)(fileSize >> 16), (uint8_t)(fileSize >> 24),
+    0, 0, 0, 0,
+    54, 0, 0, 0, // offset to pixel array
+    40, 0, 0, 0, // DIB header size
+    (uint8_t)(width), (uint8_t)(width >> 8), (uint8_t)(width >> 16), (uint8_t)(width >> 24),
+    (uint8_t)(height), (uint8_t)(height >> 8), (uint8_t)(height >> 16), (uint8_t)(height >> 24),
+    1, 0, // planes
+    24, 0, // 24 bits per pixel
+    0, 0, 0, 0, // no compression
+    (uint8_t)(imageSize), (uint8_t)(imageSize >> 8), (uint8_t)(imageSize >> 16), (uint8_t)(imageSize >> 24),
+    0x13, 0x0B, 0, 0,
+    0x13, 0x0B, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0
+  };
+
+  WiFiClient client = w3srv.client();
+  w3srv.setContentLength(fileSize);
+  w3srv.send(200, "image/bmp", "");
+  client.write(header, 54);
+
+  // Buffer 4 rows at a time (3840 bytes) for fast TCP transmission
+  uint8_t rawRow[960];
+  uint8_t chunkBuf[960 * 4];
+  int chunkRows = 0;
+
+  for (int y = (int)height - 1; y >= 0; y--) {
+    M5.Lcd.readRectRGB(0, y, width, 1, rawRow);
+    uint8_t *dst = &chunkBuf[chunkRows * 960];
+    for (uint32_t x = 0; x < width; x++) {
+      // rawRow is [R, G, B] from ILI9342C SPI GRAM
+      // BMP requires [B, G, R]
+      dst[x * 3 + 0] = rawRow[x * 3 + 2]; // B
+      dst[x * 3 + 1] = rawRow[x * 3 + 1]; // G
+      dst[x * 3 + 2] = rawRow[x * 3 + 0]; // R
+    }
+    chunkRows++;
+    if (chunkRows == 4) {
+      client.write(chunkBuf, 960 * 4);
+      chunkRows = 0;
+    }
+  }
+  if (chunkRows > 0) {
+    client.write(chunkBuf, chunkRows * 960);
+  }
+}
+
+
+
+
+
+

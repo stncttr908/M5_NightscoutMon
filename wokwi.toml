@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = "Binaries/ESP32_16MB/M5_NightscoutMon.ino.bin"
+elf = "Binaries/ESP32_16MB/M5_NightscoutMon.ino.elf"

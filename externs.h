@@ -22,5 +22,36 @@ extern void setPageIconPos(int page);
 extern uint8_t lcdBrightness;
 extern DynamicJsonDocument JSONdoc;
 extern void addErrorLog(int code);
+extern void drawIcon(int16_t x, int16_t y, const uint8_t *bitmap, uint16_t color);
+
+
+// REST API and runtime state helpers
+extern uint32_t refreshIntervalSec;
+extern bool screenOn;
+extern uint8_t savedBrightness;
+extern time_t snoozeUntil;
+extern int snoozeMult;
+extern void triggerSnooze();
+extern void cycleBrightness();
+extern void setBrightness(uint8_t val);
+extern void cyclePage();
+extern void setPage(int page);
+extern void setScreenPower(bool on);
+extern void toggleScreenPower();
+extern void resetNextRead();
+extern void checkNightMode();
+extern bool isNightModeActive();
+
+extern void getPowerTelemetry(String &powerSource, bool &isCharging, int &batPercentage, float &batVoltage);
+
+
+// MQTT helpers
+extern void mqttInit();
+extern void mqttLoop();
+extern void mqttPublishState();
+extern void mqttPublishDiscovery();
+extern bool isMqttConnected();
+
 
 #endif
+

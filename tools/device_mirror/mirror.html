@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>M5Stack Core2 Live Capture (Manual Only)</title>
+<style>
+  body { background: #0f172a; color: #f8fafc; font-family: sans-serif; text-align: center; padding: 40px; }
+  .btn { background: #0284c7; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; }
+  img { margin-top: 20px; border: 2px solid #334155; border-radius: 8px; max-width: 320px; }
+</style>
+</head>
+<body>
+  <h2>M5Stack Core2 (Manual Capture)</h2>
+  <p>Auto-refresh is completely disabled to ensure zero device overhead.</p>
+  <button class="btn" onclick="capture()">📸 Capture 1 Screenshot</button>
+  <br>
+  <img id="screen" src="" alt="Click button to capture" style="display:none;">
+
+  <script>
+    function capture() {
+      const img = document.getElementById('screen');
+      img.src = 'http://10.10.2.171/screenshot.bmp?t=' + Date.now();
+      img.style.display = 'inline-block';
+    }
+  </script>
+</body>
+</html>

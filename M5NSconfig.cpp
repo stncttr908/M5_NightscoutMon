@@ -127,9 +127,21 @@ void readConfigFromFlash(tConfig *cfg) {
     cfg->vibration_mode = prefs.getInt("vibration_mode", 0);
     cfg->vibration_pin = prefs.getInt("vibration_pin", 26);
     cfg->vibration_strength = prefs.getInt("vibration_stren", 512);
-    cfg->micro_dot_pHAT = prefs.getInt("micro_dot_pHAT", 0);
-    cfg->disable_web_server = prefs.getInt("dis_web_server", 0);
     cfg->dev_mode = prefs.getInt("developer_mode", 0);
+    cfg->night_mode_enabled = prefs.getInt("nm_enabled", 0);
+    prefs.getString("nm_start", cfg->night_mode_start, 8);
+    if(strlen(cfg->night_mode_start) == 0) strcpy(cfg->night_mode_start, "22:00");
+    prefs.getString("nm_end", cfg->night_mode_end, 8);
+    if(strlen(cfg->night_mode_end) == 0) strcpy(cfg->night_mode_end, "07:00");
+    cfg->night_mode_brightness = prefs.getInt("nm_bright", 10);
+    cfg->mqtt_enabled = prefs.getInt("mqtt_enabled", 0);
+    prefs.getString("mqtt_server", cfg->mqtt_server, 64);
+    cfg->mqtt_port = prefs.getInt("mqtt_port", 1883);
+    prefs.getString("mqtt_user", cfg->mqtt_user, 64);
+    prefs.getString("mqtt_pass", cfg->mqtt_pass, 64);
+    prefs.getString("mqtt_prefix", cfg->mqtt_topic_prefix, 64);
+    if(strlen(cfg->mqtt_topic_prefix) == 0) strcpy(cfg->mqtt_topic_prefix, "m5ns");
+    cfg->mqtt_ha_discovery = prefs.getInt("mqtt_ha_disc", 1);
     char tmps[64];
     int wlans_defined_count = 0;
     for(int i=0; i<10; i++) {
@@ -219,6 +231,17 @@ void saveConfigToFlash(tConfig *cfg) {
     prefs.putInt("micro_dot_pHAT", cfg->micro_dot_pHAT);
     prefs.putInt("dis_web_server", cfg->disable_web_server);
     prefs.putInt("developer_mode", cfg->dev_mode);
+    prefs.putInt("nm_enabled", cfg->night_mode_enabled);
+    prefs.putString("nm_start", cfg->night_mode_start);
+    prefs.putString("nm_end", cfg->night_mode_end);
+    prefs.putInt("nm_bright", cfg->night_mode_brightness);
+    prefs.putInt("mqtt_enabled", cfg->mqtt_enabled);
+    prefs.putString("mqtt_server", cfg->mqtt_server);
+    prefs.putInt("mqtt_port", cfg->mqtt_port);
+    prefs.putString("mqtt_user", cfg->mqtt_user);
+    prefs.putString("mqtt_pass", cfg->mqtt_pass);
+    prefs.putString("mqtt_prefix", cfg->mqtt_topic_prefix);
+    prefs.putInt("mqtt_ha_disc", cfg->mqtt_ha_discovery);
     char tmps[64];
     for(int i=0; i<10; i++) {
       if(cfg->wlanssid[i][0] != 0) {
@@ -865,6 +888,38 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
     cfg->time_format = 0;
   }
 
+  if (ini.getValue("config", "night_mode_enabled", buffer, bufferLen)) {
+    Serial.print("night_mode_enabled = ");
+    cfg->night_mode_enabled = atoi(buffer);
+    Serial.println(cfg->night_mode_enabled);
+  }
+  else {
+    cfg->night_mode_enabled = 0;
+  }
+
+  if (ini.getValue("config", "night_mode_start", buffer, bufferLen)) {
+    strlcpy(cfg->night_mode_start, buffer, 8);
+  }
+  else {
+    strcpy(cfg->night_mode_start, "22:00");
+  }
+
+  if (ini.getValue("config", "night_mode_end", buffer, bufferLen)) {
+    strlcpy(cfg->night_mode_end, buffer, 8);
+  }
+  else {
+    strcpy(cfg->night_mode_end, "07:00");
+  }
+
+  if (ini.getValue("config", "night_mode_brightness", buffer, bufferLen)) {
+    cfg->night_mode_brightness = atoi(buffer);
+    if(cfg->night_mode_brightness < 1 || cfg->night_mode_brightness > 100)
+      cfg->night_mode_brightness = 10;
+  }
+  else {
+    cfg->night_mode_brightness = 10;
+  }
+
   if (ini.getValue("config", "invert_display", buffer, bufferLen)) {
     Serial.print("invert_display = ");
     cfg->invert_display = atoi(buffer);
@@ -903,6 +958,34 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
   else {
     Serial.println("NO disable_web_server defined = 0");
     cfg->disable_web_server = 0;
+  }
+
+  if (ini.getValue("config", "mqtt_enabled", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_enabled", buffer, bufferLen) || ini.getValue("mqtt", "enabled", buffer, bufferLen)) {
+    cfg->mqtt_enabled = atoi(buffer);
+    Serial.printf("mqtt_enabled = %d\r\n", cfg->mqtt_enabled);
+  }
+  if (ini.getValue("config", "mqtt_server", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_server", buffer, bufferLen) || ini.getValue("mqtt", "server", buffer, bufferLen) || ini.getValue("mqtt", "host", buffer, bufferLen)) {
+    strlcpy(cfg->mqtt_server, buffer, 64);
+    Serial.printf("mqtt_server = %s\r\n", cfg->mqtt_server);
+  }
+  if (ini.getValue("config", "mqtt_port", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_port", buffer, bufferLen) || ini.getValue("mqtt", "port", buffer, bufferLen)) {
+    cfg->mqtt_port = atoi(buffer);
+    Serial.printf("mqtt_port = %d\r\n", cfg->mqtt_port);
+  }
+  if (ini.getValue("config", "mqtt_user", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_user", buffer, bufferLen) || ini.getValue("mqtt", "user", buffer, bufferLen) || ini.getValue("mqtt", "username", buffer, bufferLen)) {
+    strlcpy(cfg->mqtt_user, buffer, 64);
+    Serial.printf("mqtt_user = %s\r\n", cfg->mqtt_user);
+  }
+  if (ini.getValue("config", "mqtt_pass", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_pass", buffer, bufferLen) || ini.getValue("mqtt", "pass", buffer, bufferLen) || ini.getValue("mqtt", "password", buffer, bufferLen)) {
+    strlcpy(cfg->mqtt_pass, buffer, 64);
+  }
+  if (ini.getValue("config", "mqtt_topic_prefix", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_topic_prefix", buffer, bufferLen) || ini.getValue("mqtt", "topic_prefix", buffer, bufferLen) || ini.getValue("mqtt", "prefix", buffer, bufferLen)) {
+    strlcpy(cfg->mqtt_topic_prefix, buffer, 64);
+    Serial.printf("mqtt_topic_prefix = %s\r\n", cfg->mqtt_topic_prefix);
+  }
+  if (ini.getValue("config", "mqtt_ha_discovery", buffer, bufferLen) || ini.getValue("mqtt", "mqtt_ha_discovery", buffer, bufferLen) || ini.getValue("mqtt", "ha_discovery", buffer, bufferLen) || ini.getValue("mqtt", "discovery", buffer, bufferLen)) {
+    cfg->mqtt_ha_discovery = atoi(buffer);
+    Serial.printf("mqtt_ha_discovery = %d\r\n", cfg->mqtt_ha_discovery);
   }
 
   int wlans_defined_count = 0;
