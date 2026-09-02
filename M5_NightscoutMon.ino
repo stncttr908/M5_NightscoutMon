@@ -90,7 +90,7 @@ SHT3X sht30;
 #include "microdot.h"
 MicroDot MD;
 
-String M5NSversion("2026090202");
+String M5NSversion("2026090203");
 
 #define VIBfreq 10000
 #define VIBchannel 14
@@ -681,6 +681,63 @@ void triggerSnooze() {
     
     if(dispPage < maxPage) {
       if(snoozeMult == 0)
+        M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
+      else
+        drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
+    }
+  }
+  udpSendSnoozeRetries = UDP_SEND_RETRIES;
+  lastButtonMillis = millis();
+  mqttPublishState();
+}
+
+int getSnoozeRemainingSeconds() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo) || snoozeUntil <= 0) return 0;
+  int rem = difftime(snoozeUntil, mktime(&timeinfo));
+  return (rem > 0) ? rem : 0;
+}
+
+int getSnoozeRemainingMinutes() {
+  int sec = getSnoozeRemainingSeconds();
+  return (sec > 0) ? (sec + 59) / 60 : 0;
+}
+
+void setSnooze(int minutes) {
+  struct tm timeinfo;
+  bool timeOK = getLocalTime(&timeinfo);
+  if (minutes <= 0 || !timeOK) {
+    snoozeUntil = 0;
+    snoozeMult = 0;
+  } else {
+    snoozeUntil = mktime(&timeinfo) + (time_t)minutes * 60;
+    snoozeMult = (cfg.snooze_timeout > 0) ? (minutes / cfg.snooze_timeout) : 1;
+    if (snoozeMult == 0) snoozeMult = 1;
+  }
+  
+  if (screenOn) {
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setFreeFont(FSSB12);
+    char tmpStr[24];
+    if (minutes <= 0) {
+      strcpy(tmpStr, "SNOOZE OFF");
+      M5.Lcd.fillRect(90, 218, 140, 22, TFT_DARKGREY);
+      M5.Lcd.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    } else {
+      sprintf(tmpStr, "SNOOZE: %dm", minutes);
+      M5.Lcd.fillRect(90, 218, 140, 22, TFT_RED);
+      M5.Lcd.setTextColor(TFT_WHITE, TFT_RED);
+      if (cfg.LED_strip_mode == 2) {
+        pixels.clear();
+        pixels.show();
+      }
+    }
+    M5.Lcd.setTextDatum(MC_DATUM);
+    M5.Lcd.drawString(tmpStr, 160, 229);
+    M5.Lcd.setTextDatum(TL_DATUM);
+    
+    if (dispPage < maxPage) {
+      if (minutes <= 0)
         M5.Lcd.fillRect(icon_xpos[1], icon_ypos[1], 16, 16, BLACK);
       else
         drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
@@ -2756,6 +2813,7 @@ void setup() {
       w3srv.on("/api/action/page", handleApiActionPage);
       w3srv.on("/api/page", handleApiPage);
       w3srv.on("/api/action/snooze", handleApiActionSnooze);
+      w3srv.on("/api/snooze", handleApiActionSnooze);
       w3srv.on("/api/screen", handleApiScreen);
       w3srv.on("/api/power", handleApiPower);
       w3srv.on("/api/status", handleApiStatus);

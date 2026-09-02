@@ -70,11 +70,16 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
   else if (String(topic) == base + "/snooze/set") {
     if (strMsg.equalsIgnoreCase("OFF") || strMsg == "0") {
-      snoozeUntil = 0;
-      snoozeMult = 0;
-      if (screenOn) draw_page();
-    } else {
+      setSnooze(0);
+    } else if (strMsg.equalsIgnoreCase("PRESS") || strMsg.equalsIgnoreCase("CYCLE") || strMsg.equalsIgnoreCase("TOGGLE")) {
       triggerSnooze();
+    } else {
+      int mins = strMsg.toInt();
+      if (mins > 0) {
+        setSnooze(mins);
+      } else {
+        triggerSnooze();
+      }
     }
     mqttPublishState();
   }
@@ -293,6 +298,28 @@ void mqttPublishDiscovery() {
                   "\"uniq_id\":\"" + devId + "_btn_snooze\","
                   "\"avty_t\":\"" + statusTopic + "\"" + devObj + "}";
   publishHADiscoveryEntity("button", "snooze", btnCfg);
+
+  // 12. Snooze Remaining Sensor
+  String snzRemCfg = "{\"name\":\"Snooze Remaining\","
+                     "\"stat_t\":\"" + stateTopic + "\","
+                     "\"unit_of_meas\":\"min\","
+                     "\"val_tpl\":\"{{ value_json.snooze_remaining }}\","
+                     "\"icon\":\"mdi:timer-sand\","
+                     "\"uniq_id\":\"" + devId + "_snooze_remaining\","
+                     "\"avty_t\":\"" + statusTopic + "\"" + devObj + "}";
+  publishHADiscoveryEntity("sensor", "snooze_remaining", snzRemCfg);
+
+  // 13. Snooze Duration Number Control
+  String snzNumCfg = "{\"name\":\"Snooze Duration\","
+                     "\"stat_t\":\"" + stateTopic + "\","
+                     "\"val_tpl\":\"{{ value_json.snooze_remaining }}\","
+                     "\"cmd_t\":\"" + base + "/snooze/set\","
+                     "\"min\":0,\"max\":240,\"step\":15,"
+                     "\"unit_of_meas\":\"min\","
+                     "\"icon\":\"mdi:alarm-snooze\","
+                     "\"uniq_id\":\"" + devId + "_snooze_duration\","
+                     "\"avty_t\":\"" + statusTopic + "\"" + devObj + "}";
+  publishHADiscoveryEntity("number", "snooze_duration", snzNumCfg);
 
   discoveryPublished = true;
   Serial.println("[MQTT] Home Assistant Discovery published.");

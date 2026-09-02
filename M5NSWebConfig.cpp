@@ -1562,14 +1562,24 @@ void handleApiPage() {
 }
 
 void handleApiActionSnooze() {
-  triggerSnooze();
-  struct tm timeinfo;
-  bool timeOK = getLocalTime(&timeinfo);
-  bool snoozeActive = (snoozeMult > 0);
-  if (timeOK && snoozeUntil <= mktime(&timeinfo)) {
-    snoozeActive = false;
+  if (w3srv.hasArg("minutes") || w3srv.hasArg("min") || w3srv.hasArg("val")) {
+    String val = w3srv.hasArg("minutes") ? w3srv.arg("minutes") : (w3srv.hasArg("min") ? w3srv.arg("min") : w3srv.arg("val"));
+    val.toLowerCase();
+    if (val.equals("off") || val.equals("0")) {
+      setSnooze(0);
+    } else {
+      setSnooze(val.toInt());
+    }
+  } else {
+    triggerSnooze();
   }
+  int remSec = getSnoozeRemainingSeconds();
+  int remMin = getSnoozeRemainingMinutes();
+  bool snoozeActive = (remSec > 0);
+
   String res = "{\"status\":\"ok\",\"snooze_active\":" + String(snoozeActive ? "true" : "false") +
+               ",\"snooze_remaining_min\":" + String(remMin) +
+               ",\"snooze_remaining_sec\":" + String(remSec) +
                ",\"snooze_multiplier\":" + String(snoozeMult) +
                ",\"snooze_until\":" + String((uint32_t)snoozeUntil) + "}";
   w3srv.send(200, "application/json", res);
@@ -1618,30 +1628,27 @@ void handleApiStatus() {
   
   getPowerTelemetry(powerSource, isCharging, batPercentage, batVoltage);
   
-  struct tm timeinfo;
-  bool timeOK = getLocalTime(&timeinfo);
-  bool snoozeActive = (snoozeMult > 0);
-  if (timeOK && snoozeUntil <= mktime(&timeinfo)) {
-    snoozeActive = false;
-  }
+  int remSec = getSnoozeRemainingSeconds();
+  int remMin = getSnoozeRemainingMinutes();
+  bool snoozeActive = (remSec > 0);
   
   float currentSgv = cfg.show_mgdl ? ns.sensSgv : ns.sensSgvMgDl;
   
-  char buf[320];
+  char buf[384];
   if (cfg.show_mgdl) {
     snprintf(buf, sizeof(buf),
-             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"sgv\":%.1f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
+             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"snooze_remaining_min\":%d,\"snooze_remaining_sec\":%d,\"snooze_until\":%lu,\"sgv\":%.1f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
              screenOn ? "on" : "off", lcdBrightness, dispPage, (unsigned long)refreshIntervalSec,
-             snoozeActive ? "true" : "false", currentSgv,
+             snoozeActive ? "true" : "false", remMin, remSec, (unsigned long)snoozeUntil, currentSgv,
              isNightModeActive() ? "true" : "false",
              cfg.night_mode_enabled ? "true" : "false",
              powerSource.c_str(),
              isCharging ? "true" : "false", batPercentage);
   } else {
     snprintf(buf, sizeof(buf),
-             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"sgv\":%.0f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
+             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"snooze_remaining_min\":%d,\"snooze_remaining_sec\":%d,\"snooze_until\":%lu,\"sgv\":%.0f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
              screenOn ? "on" : "off", lcdBrightness, dispPage, (unsigned long)refreshIntervalSec,
-             snoozeActive ? "true" : "false", currentSgv,
+             snoozeActive ? "true" : "false", remMin, remSec, (unsigned long)snoozeUntil, currentSgv,
              isNightModeActive() ? "true" : "false",
              cfg.night_mode_enabled ? "true" : "false",
              powerSource.c_str(),
