@@ -381,8 +381,14 @@ void handleRoot() {
   rowToggle(message, "MQTT enabled", cfg.mqtt_enabled, "mqtt_enabled", "mq");
   rowEdit(message, "Broker & credentials", (cfg.mqtt_server[0] != 0) ? (String(cfg.mqtt_server) + ":" + String(cfg.mqtt_port)) : String("(none)"), "mqtt", "mq");
   rowToggle(message, "Home Assistant discovery", cfg.mqtt_ha_discovery, "mqtt_ha_discovery", "mq");
-  rowToggle(message, "UDP LAN sync (snooze)", cfg.udp_sync_enabled, "udp_sync_enabled", "mq");
-  rowEdit(message, "UDP sync port", String(cfg.udp_sync_port), "udp_sync_port", "mq");
+  message += "</details>\r\n";
+
+  // ---- LAN Device Sync ----
+  detailsOpen(message, "ls", "LAN Device Sync", sec);
+  rowToggle(message, "Sync enabled", cfg.udp_sync_enabled, "udp_sync_enabled", "ls");
+  rowEdit(message, "UDP port", String(cfg.udp_sync_port), "udp_sync_port", "ls");
+  rowToggle(message, "Sync snooze state", cfg.udp_sync_snooze, "udp_sync_snooze", "ls");
+  rowToggle(message, "Sync refresh interval", cfg.udp_sync_refresh, "udp_sync_refresh", "ls");
   message += "</details>\r\n";
 
   // ---- Hardware add-ons ----
@@ -632,16 +638,19 @@ void handleUpdate() {
     M5.Lcd.println("Updating the firmware... ");
     M5.Lcd.println();
     httpUpdate.rebootOnUpdate(false);
-    // Use a plain WiFiClient for http:// URLs (e.g. local LAN servers via
-    // "python3 -m http.server"). A TLS client connecting to a plain HTTP server
-    // sends a TLS ClientHello and receives a 400 Bad Request back.
-    t_httpUpdate_return ret;
-    if (targetUrl.startsWith("http://")) {
-      WiFiClient plainClient;
-      ret = httpUpdate.update(plainClient, targetUrl);
-    } else {
-      ret = httpUpdate.update(client, targetUrl);
-    }
+    // WiFiClientSecure with setInsecure() accepts any TLS certificate,
+    // which is sufficient for self-signed local servers.
+    // Plain http:// URLs are intentionally NOT supported: unencrypted OTA
+    // allows passive interception and MITM firmware substitution on the LAN.
+    // For local OTA, serve with a self-signed HTTPS cert instead:
+    //   openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+    //     -days 1 -nodes -subj '/CN=localhost'
+    //   python3 -c "import http.server,ssl; h=http.server.HTTPServer(
+    //     ('0.0.0.0',8083),http.server.SimpleHTTPRequestHandler);
+    //     ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);
+    //     ctx.load_cert_chain('cert.pem','key.pem');
+    //     h.socket=ctx.wrap_socket(h.socket,server_side=True); h.serve_forever()"
+    t_httpUpdate_return ret = httpUpdate.update(client, targetUrl);
 
     switch (ret) {
       case HTTP_UPDATE_FAILED:
@@ -920,6 +929,14 @@ void handleSwitchConfig() {
         if(haveVal) cfg.udp_sync_enabled = (val!=0);
         else cfg.udp_sync_enabled = !cfg.udp_sync_enabled;
         udpSyncInit();
+      }
+      else if(param.equals("udp_sync_snooze")) {
+        if(haveVal) cfg.udp_sync_snooze = (val!=0);
+        else cfg.udp_sync_snooze = !cfg.udp_sync_snooze;
+      }
+      else if(param.equals("udp_sync_refresh")) {
+        if(haveVal) cfg.udp_sync_refresh = (val!=0);
+        else cfg.udp_sync_refresh = !cfg.udp_sync_refresh;
       }
     }
   }
@@ -1431,9 +1448,11 @@ static void persistConfigToDisk() {
     dstFil.print("mqtt_topic_prefix = "); dstFil.print(cfg.mqtt_topic_prefix); dstFil.print("\r\n");
     dstFil.print("mqtt_ha_discovery = "); dstFil.print(cfg.mqtt_ha_discovery); dstFil.print("\r\n");
     dstFil.print("\r\n");
-    dstFil.print("; UDP LAN Sync\r\n");
+    dstFil.print("; UDP LAN Device Sync\r\n");
     dstFil.print("udp_sync_enabled = "); dstFil.print(cfg.udp_sync_enabled); dstFil.print("\r\n");
-    dstFil.print("udp_sync_port = "); dstFil.print(cfg.udp_sync_port); dstFil.print("\r\n");
+    dstFil.print("udp_sync_port = ");    dstFil.print(cfg.udp_sync_port);    dstFil.print("\r\n");
+    dstFil.print("udp_sync_snooze = ");  dstFil.print(cfg.udp_sync_snooze);  dstFil.print("\r\n");
+    dstFil.print("udp_sync_refresh = "); dstFil.print(cfg.udp_sync_refresh); dstFil.print("\r\n");
     dstFil.print("\r\n");
     for(int i=0; i<10; i++) {
       if(cfg.wlanssid[i][0] != 0) {

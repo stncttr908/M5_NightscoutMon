@@ -654,7 +654,7 @@ void triggerSnooze() {
         drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
     }
   }
-  udpSyncScheduleSnooze();
+  udpSyncSendSnooze();
   lastButtonMillis = millis();
   mqttPublishState();
 }
@@ -708,7 +708,7 @@ void setSnooze(int minutes) {
         drawIcon(icon_xpos[1], icon_ypos[1], (uint8_t*)clock_icon16x16, TFT_RED);
     }
   }
-  udpSyncScheduleSnooze();
+  udpSyncSendSnooze();
   lastButtonMillis = millis();
   mqttPublishState();
 }
@@ -1246,7 +1246,7 @@ void handleAlarmsInfoLine(struct NSinfo *ns) {
         // Snooze just expired – tell peers so they un-snooze too
         snoozeUntil = 0;
         snoozeMult = 0;
-        udpSyncScheduleSnooze();
+        udpSyncSendSnooze();
       }
       snoozeRemaining = 0;
     }

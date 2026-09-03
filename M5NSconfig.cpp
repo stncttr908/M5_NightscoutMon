@@ -143,7 +143,9 @@ void readConfigFromFlash(tConfig *cfg) {
     if(strlen(cfg->mqtt_topic_prefix) == 0) strcpy(cfg->mqtt_topic_prefix, "m5ns");
     cfg->mqtt_ha_discovery = prefs.getInt("mqtt_ha_disc", 1);
     cfg->udp_sync_enabled = prefs.getInt("udp_sync_en", 1);
-    cfg->udp_sync_port = prefs.getInt("udp_sync_port", 50555);
+    cfg->udp_sync_port    = prefs.getInt("udp_sync_port", 50555);
+    cfg->udp_sync_snooze  = prefs.getInt("udp_sync_snz", 1);
+    cfg->udp_sync_refresh = prefs.getInt("udp_sync_ref", 1);
     char tmps[64];
     int wlans_defined_count = 0;
     for(int i=0; i<10; i++) {
@@ -246,6 +248,8 @@ void saveConfigToFlash(tConfig *cfg) {
     prefs.putInt("mqtt_ha_disc", cfg->mqtt_ha_discovery);
     prefs.putInt("udp_sync_en", cfg->udp_sync_enabled);
     prefs.putInt("udp_sync_port", cfg->udp_sync_port);
+    prefs.putInt("udp_sync_snz", cfg->udp_sync_snooze);
+    prefs.putInt("udp_sync_ref", cfg->udp_sync_refresh);
     char tmps[64];
     for(int i=0; i<10; i++) {
       if(cfg->wlanssid[i][0] != 0) {
@@ -999,6 +1003,14 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
   if (ini.getValue("config", "udp_sync_port", buffer, bufferLen) || ini.getValue("udpsync", "port", buffer, bufferLen) || ini.getValue("udpsync", "udp_sync_port", buffer, bufferLen)) {
     cfg->udp_sync_port = atoi(buffer);
     Serial.printf("udp_sync_port = %d\r\n", cfg->udp_sync_port);
+  }
+  if (ini.getValue("config", "udp_sync_snooze", buffer, bufferLen) || ini.getValue("udpsync", "snooze", buffer, bufferLen) || ini.getValue("udpsync", "udp_sync_snooze", buffer, bufferLen)) {
+    cfg->udp_sync_snooze = atoi(buffer);
+    Serial.printf("udp_sync_snooze = %d\r\n", cfg->udp_sync_snooze);
+  }
+  if (ini.getValue("config", "udp_sync_refresh", buffer, bufferLen) || ini.getValue("udpsync", "refresh", buffer, bufferLen) || ini.getValue("udpsync", "udp_sync_refresh", buffer, bufferLen)) {
+    cfg->udp_sync_refresh = atoi(buffer);
+    Serial.printf("udp_sync_refresh = %d\r\n", cfg->udp_sync_refresh);
   }
 
   int wlans_defined_count = 0;
