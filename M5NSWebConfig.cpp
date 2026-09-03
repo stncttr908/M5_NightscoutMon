@@ -382,6 +382,7 @@ void handleRoot() {
   rowEdit(message, "Broker & credentials", (cfg.mqtt_server[0] != 0) ? (String(cfg.mqtt_server) + ":" + String(cfg.mqtt_port)) : String("(none)"), "mqtt", "mq");
   rowToggle(message, "Home Assistant discovery", cfg.mqtt_ha_discovery, "mqtt_ha_discovery", "mq");
   rowToggle(message, "UDP LAN sync (snooze)", cfg.udp_sync_enabled, "udp_sync_enabled", "mq");
+  rowEdit(message, "UDP sync port", String(cfg.udp_sync_port), "udp_sync_port", "mq");
   message += "</details>\r\n";
 
   // ---- Hardware add-ons ----
@@ -973,6 +974,9 @@ void handleEditConfigItem() {
       editRow(message, "Password", "<input type=\"password\" name=\"mqtt_pass\" value=\"" + String(cfg.mqtt_pass) + "\" size=\"28\" maxlength=\"63\">", "stored on device in plain text");
       editRow(message, "Topic prefix", "<input type=\"text\" name=\"mqtt_topic_prefix\" value=\"" + String(cfg.mqtt_topic_prefix) + "\" size=\"20\" maxlength=\"63\">", "default: m5ns");
     }
+    if(String(w3srv.arg(0)).equals("udp_sync_port")) {
+      editRow(message, "UDP sync port", "<input type=\"text\" name=\"udp_sync_port\" value=\"" + String(cfg.udp_sync_port) + "\" size=\"6\" maxlength=\"5\">", "default 50555 — all devices on the LAN must match");
+    }
     if(String(w3srv.arg(0)).equals("deviceName")) {
       editRow(message, "Device name", "<input type=\"text\" name=\"deviceName\" value=\"" + String(cfg.deviceName) + "\" size=\"12\" maxlength=\"32\">.local");
       message += "<p class=\"warn\">Applied after Save - the device will restart automatically.</p>\r\n";
@@ -1112,6 +1116,10 @@ void handleGetEditConfigItem() {
     if(String(w3srv.argName(i)).equals("mqtt_port")) {
       cfg.mqtt_port = String(w3srv.arg(i)).toInt();
       mqttInit();
+    }
+    if(String(w3srv.argName(i)).equals("udp_sync_port")) {
+      cfg.udp_sync_port = String(w3srv.arg(i)).toInt();
+      udpSyncInit();
     }
     if(String(w3srv.argName(i)).equals("mqtt_user")) {
       strncpy(cfg.mqtt_user, String(w3srv.arg(i)).c_str(), 64);
