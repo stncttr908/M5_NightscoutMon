@@ -631,8 +631,16 @@ void handleUpdate() {
     M5.Lcd.println("Updating the firmware... ");
     M5.Lcd.println();
     httpUpdate.rebootOnUpdate(false);
-    t_httpUpdate_return ret = httpUpdate.update(client, targetUrl);
-    //t_httpUpdate_return ret = httpUpdate.update(client, "server", 80, "file.bin");
+    // Use a plain WiFiClient for http:// URLs (e.g. local LAN servers via
+    // "python3 -m http.server"). A TLS client connecting to a plain HTTP server
+    // sends a TLS ClientHello and receives a 400 Bad Request back.
+    t_httpUpdate_return ret;
+    if (targetUrl.startsWith("http://")) {
+      WiFiClient plainClient;
+      ret = httpUpdate.update(plainClient, targetUrl);
+    } else {
+      ret = httpUpdate.update(client, targetUrl);
+    }
 
     switch (ret) {
       case HTTP_UPDATE_FAILED:
