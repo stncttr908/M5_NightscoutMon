@@ -10,8 +10,9 @@
  *  TYPE= dispatch makes the format forward-compatible: devices running
  *  older firmware silently ignore TYPE values they don't recognise.
  *
- *  The CRC-16 of cfg.url acts as a namespace: devices on different NS
- *  instances share the same LAN without stepping on each other.
+ *  The CRC-16 of cfg.url (normalized: stripped https?:// and trailing slashes)
+ *  acts as a namespace: devices on different NS instances share the same LAN
+ *  without stepping on each other, even with minor URL formatting differences.
  *
  *  Per-type sync can be disabled independently via cfg flags:
  *    cfg.udp_sync_snooze  – gates SNOOZE broadcasts
@@ -39,7 +40,7 @@ extern tConfig cfg;
 extern time_t snoozeUntil;
 extern int snoozeMult;
 extern uint32_t refreshIntervalSec;
-extern uint16_t calcCRC(char *str);
+extern uint16_t calcCRC(const char *str);
 extern void handleAlarmsInfoLine(struct NSinfo *ns);
 extern struct NSinfo ns;
 // ----------------------------------------------------------------

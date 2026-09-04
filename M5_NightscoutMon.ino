@@ -333,14 +333,41 @@ uint16_t crc16_update(uint16_t crc, uint8_t a)
   return crc;
 }
 
-uint16_t calcCRC(char* str)
+// Calculates CRC-16 of Nightscout URL, normalizing beforehand by stripping
+// optional leading https?:// and any trailing slashes/whitespace so devices
+// with minor URL formatting differences share the same namespace tag.
+uint16_t calcCRC(const char* str)
 {
-  uint16_t crc=0; // starting value as you like, must be the same before each calculation
-  for (int i=0;i<strlen(str);i++) // for each character in the string
-  {
-    crc= crc16_update (crc, str[i]); // update the crc value
+  if (!str) return 0;
+
+  // Skip leading whitespace
+  while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n') {
+    str++;
+  }
+
+  // Strip leading https?:// (case-insensitive)
+  if (strncasecmp(str, "https://", 8) == 0) {
+    str += 8;
+  } else if (strncasecmp(str, "http://", 7) == 0) {
+    str += 7;
+  }
+
+  // Strip trailing slashes and whitespace
+  size_t len = strlen(str);
+  while (len > 0 && (str[len - 1] == '/' || str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\r' || str[len - 1] == '\n')) {
+    len--;
+  }
+
+  uint16_t crc = 0;
+  for (size_t i = 0; i < len; i++) {
+    crc = crc16_update(crc, (uint8_t)str[i]);
   }
   return crc;
+}
+
+uint16_t calcCRC(char* str)
+{
+  return calcCRC((const char*)str);
 }
 
 void startupLogo() {
