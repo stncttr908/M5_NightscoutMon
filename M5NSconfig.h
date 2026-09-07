@@ -25,6 +25,7 @@ struct tConfig {
   int default_page = 0; // page number displayed after startup
   char restart_at_time[10]; // time in HH:MM format when the device will restart
   int restart_at_logged_errors = 0; // restart device after particular number of errors in the log (0 = do not restart)
+  int consecutive_sync_threshold = 5; // consecutive sync errors before logging and showing warning icon (default 5 = 5 mins)
   int show_current_time = 0; // show currnet time instead of last valid data time_
   int show_COB_IOB = 0; // show COB and IOB, values are grayed out if COB/IOB value is 0
   int snooze_timeout = 30; // timeout to snooze alarm in minutes

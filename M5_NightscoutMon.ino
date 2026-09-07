@@ -92,7 +92,7 @@ SHT3X sht30;
 #include "microdot.h"
 MicroDot MD;
 
-String M5NSversion("2026090203");
+String M5NSversion("2026090501");
 
 #define VIBfreq 10000
 #define VIBchannel 14
@@ -244,7 +244,9 @@ void lcdSetBrightness(uint8_t brightness) {
   M5.Display.setBrightness(map(brightness, 0, 100, 0, 255));
 }
 
-void addErrorLog(int code){
+uint32_t consecutiveSyncFailures = 0;
+
+static void writeErrorLog(int code) {
   if(err_log_ptr>9) {
     for(int i=0; i<9; i++) {
       err_log[i].err_time=err_log[i+1].err_time;
@@ -256,6 +258,31 @@ void addErrorLog(int code){
   err_log[err_log_ptr].err_code=code;
   err_log_ptr++;
   err_log_count++;
+}
+
+void resetConsecutiveSyncFailures() {
+  if(consecutiveSyncFailures > 0) {
+    Serial.printf("[Sync] Success: recovered after %u consecutive failures\r\n", consecutiveSyncFailures);
+    consecutiveSyncFailures = 0;
+  }
+}
+
+void clearErrorLog() {
+  err_log_ptr = 0;
+  err_log_count = 0;
+  consecutiveSyncFailures = 0;
+  drawLogWarningIcon();
+}
+
+void addErrorLog(int code){
+  consecutiveSyncFailures++;
+  int thresh = (cfg.consecutive_sync_threshold > 0) ? cfg.consecutive_sync_threshold : 1;
+  Serial.printf("[Sync] Error %d (consecutive failures: %u, threshold: %d)\r\n",
+                code, consecutiveSyncFailures, thresh);
+  if(consecutiveSyncFailures >= thresh && (consecutiveSyncFailures % thresh == 0)) {
+    Serial.printf("[Sync] Consecutive failure threshold (%d) reached -> logging error %d\r\n", thresh, code);
+    writeErrorLog(code);
+  }
 }
 
 // Human-readable text for a positive error-log code, shown on the error log page.
@@ -1520,14 +1547,7 @@ void draw_page() {
       M5.Lcd.drawString(datetimeStr, 0, 0);
 
       drawBatteryStatus(icon_xpos[2], icon_ypos[2]);
-
-      if(err_log_ptr>0) {
-        M5.Lcd.fillRect(icon_xpos[0], icon_ypos[0], 16, 16, BLACK);
-        if(err_log_ptr>5)
-          drawIcon(icon_xpos[0], icon_ypos[0], (uint8_t*)warning_icon16x16, TFT_YELLOW);
-        else
-          drawIcon(icon_xpos[0], icon_ypos[0], (uint8_t*)warning_icon16x16, TFT_LIGHTGREY);
-      }
+      drawLogWarningIcon();
               
       M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
       M5.Lcd.drawString(cfg.userName, 0, 24);
@@ -2340,10 +2360,12 @@ void setup() {
       w3srv.on("/edititem", handleEditConfigItem);
       w3srv.on("/getedititem", handleGetEditConfigItem);
       w3srv.on("/clearconfigflash", handleClearConfigFlash);
+      w3srv.on("/clear_errors", handleClearErrors);
       w3srv.on("/inline", []() {
         w3srv.send(200, "text/plain", "this is inline and works as well");
       });
       // REST API Endpoints
+      w3srv.on("/api/clear_errors", handleApiClearErrors);
       w3srv.on("/api/refresh", handleApiRefresh);
       w3srv.on("/api/action/brightness", handleApiActionBrightness);
       w3srv.on("/api/brightness", handleApiBrightness);
@@ -2458,7 +2480,10 @@ void loop() {
       if(shouldRead) {
         lastReadMillis = millis();
         rcnt = 0;
-        readDataSource();
+        int syncRes = readDataSource();
+        if(syncRes == 0) {
+          resetConsecutiveSyncFailures();
+        }
         mqttPublishState();
         if(rcnt==4) {
           if (screenOn) {

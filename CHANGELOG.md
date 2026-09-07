@@ -10,7 +10,13 @@
 * Integrated a reachability monitor and fallback timer (`wireguard_fallback_timeout`, `wireguard_fallback_retry`): if the WireGuard endpoint is unreachable or handshakes time out, traffic seamlessly falls back to direct Wi-Fi so monitoring is never blocked, while automatically retrying the VPN in the background.
 * Added full configuration surfaces across `M5NS.INI`, persistent NVS flash, and the Web Configuration UI (new "WireGuard VPN" collapsible section with status indicator). Status also displayed on the diagnostic error log screen (Page 3).
 
-### 15 August 2026 (Waveshare ESP32-Touch-LCD-3.5 port)
+### 5 September 2026 (Consecutive sync failure threshold & error clearing)
+
+* Added `consecutive_sync_threshold` configuration setting (default `5`, corresponding to 5 consecutive minutes when polling every minute). Solitary timeouts, brief dropped packets, or transient sync failures no longer trigger the warning icon on the screen or pollute the error log. Errors are only logged to `err_log` if sync fails for the full threshold (or multiples thereof).
+* Successful sync immediately clears the consecutive failure streak.
+* Added `/api/clear_errors` REST endpoint and Web UI "Clear error log" action to allow manual clearing of logged errors and instant erasure of the screen warning icon without needing a reboot.
+* Exposed `consecutive_sync_threshold` and `consecutive_sync_failures` in `/api/status` JSON telemetry.
+* Setting is configurable via `M5NS.INI` (`consecutive_sync_threshold` or `sync_threshold`), NVS flash (`sync_thresh`), and the Web Config UI under System & firmware. Setting to `1` restores immediate logging on any failure.
 
 * Second non-M5Stack target: the Waveshare ESP32-Touch-LCD-3.5 (classic ESP32-D0WDR2, 16 MB flash, 2 MB PSRAM, 3.5" 320x480 ST7796S IPS on SPI, FT6336 touch, TCA9554 IO expander, AXP2101 PMIC, ES8311 codec, microSD). Built with `Scripts\build.ps1 -Target WS_TouchLCD35` into `Binaries\WS_TouchLCD35\`; hardware-validated August 2026 (first tester: boot-loop and blank-display fixes in the shim), part of release (`-Target All`) builds. Web flasher card + manifest and OTA path (`WS_TouchLCD35`) added; no new library is needed - the panel, backlight and touch are driven by M5GFX's own LovyanGFX classes (`hal_ws_touchlcd35.h/.cpp`, selected by `-DDEVICE_WS_TOUCH_LCD_35` in `M5NSDevice.h`).
 * Same shim strategy as the JC3248W535: the unchanged 320x240 UI draws into an offscreen sprite, a background task composes it exactly 1.5x into a 480x320 landscape frame and pushes it whole (the ST7796 rotates in hardware, so no rotation trick is needed). Touch thirds at the bottom become BtnA/B/C. Because the panel shares its SPI bus with the microSD, the frame push is serialised on the Arduino SPI transaction mutex that the SD driver also uses.

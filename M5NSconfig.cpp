@@ -93,6 +93,7 @@ void readConfigFromFlash(tConfig *cfg) {
     if(strlen(cfg->restart_at_time)==0)
       strcpy(cfg->restart_at_time, "03:30");
     cfg->restart_at_logged_errors = prefs.getInt("restart_log_err", 30);
+    cfg->consecutive_sync_threshold = prefs.getInt("sync_thresh", 5);
     cfg->snooze_timeout = prefs.getInt("snooze_timeout", 30);
     cfg->alarm_repeat = prefs.getInt("alarm_repeat", 5);
     cfg->yellow_low = prefs.getFloat("yellow_low", 4.5);
@@ -212,6 +213,7 @@ void saveConfigToFlash(tConfig *cfg) {
     prefs.putInt("default_page", cfg->default_page);
     prefs.putString("restart_at_time", cfg->restart_at_time);
     prefs.putInt("restart_log_err", cfg->restart_at_logged_errors);
+    prefs.putInt("sync_thresh", cfg->consecutive_sync_threshold);
     prefs.putInt("snooze_timeout", cfg->snooze_timeout);
     prefs.putInt("alarm_repeat", cfg->alarm_repeat);
     prefs.putFloat("yellow_low", cfg->yellow_low);
@@ -550,6 +552,16 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
   else {
     Serial.println("NO restart_at_logged_errors defined -> no restarts");
     cfg->restart_at_logged_errors = 0;
+  }
+
+  if (ini.getValue("config", "consecutive_sync_threshold", buffer, bufferLen) || ini.getValue("config", "sync_threshold", buffer, bufferLen)) {
+    Serial.print("consecutive_sync_threshold = ");
+    cfg->consecutive_sync_threshold = atoi(buffer);
+    Serial.println(cfg->consecutive_sync_threshold);
+  }
+  else {
+    Serial.println("NO consecutive_sync_threshold defined -> default 5");
+    cfg->consecutive_sync_threshold = 5;
   }
 
   if (ini.getValue("config", "show_current_time", buffer, bufferLen)) {

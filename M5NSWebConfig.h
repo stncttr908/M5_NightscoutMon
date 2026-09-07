@@ -21,9 +21,11 @@ void handleEditConfigItem();
 void handleGetEditConfigItem();
 void handleSaveConfig();
 void handleClearConfigFlash();
+void handleClearErrors();
 void handleNotFound();
 
 // REST API Endpoints
+void handleApiClearErrors();
 void handleApiRefresh();
 void handleApiActionBrightness();
 void handleApiBrightness();

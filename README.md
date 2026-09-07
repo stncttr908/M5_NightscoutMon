@@ -78,6 +78,9 @@ show_current_time = 1               ; show current time instead of last valid da
 restart_at_time = HH:MM             ; time in HH:MM format when the device will restart
 restart_at_logged_errors = 0        ; restart device after particular number of errors in the log 
                                     ; (0 = do not restart)
+consecutive_sync_threshold = 5      ; consecutive sync failures before logging an error to the log
+                                    ; and showing warning icon (default: 5, equivalent to 5 mins
+                                    ; of failure under 1-minute retrieval; 1 = log every failure)
 show_COB_IOB = 1                    ; show COB and IOB, values are grayed out if COB/IOB value is 0
 snooze_timeout = 30                 ; sound snooze time in minutes after press of the middle button
 alarm_repeat = 5                    ; sound repeat interval in minutes (alarm repeats only if alarm/warning 
@@ -263,6 +266,7 @@ When the web server is active, `M5_NightscoutMon` exposes non-blocking REST API 
 | `/api/status` | `GET` | _none_ | Returns consolidated telemetry (glucose, delta, screen state, battery, etc.) |
 | `/api/night_mode` | `GET` | `enabled=0\|1&brightness=10&start=22:00&end=07:00` | Configures night mode schedule and dimming |
 | `/api/screenshot` | `GET` | _none_ | Returns 320x240 RGB BMP image snapshot of the current display framebuffer |
+| `/api/clear_errors` | `GET` | _none_ | Clears logged errors, resets consecutive sync failure count, and erases warning icon |
 
 ### MQTT & Home Assistant Auto-Discovery
 
