@@ -413,6 +413,8 @@ void handleRoot() {
   rowEdit(message, "DST offset", String(cfg.dst) + " s", "timeZoneDST", "sy");
   rowEdit(message, "Restart at time", strcmp(cfg.restart_at_time,"NORES")==0?String("do NOT restart"):String(cfg.restart_at_time), "restartAt", "sy");
   rowEdit(message, "Restart after N errors", cfg.restart_at_logged_errors==0?String("do NOT restart"):String(cfg.restart_at_logged_errors), "restartAt", "sy");
+  rowEdit(message, "Consecutive sync threshold", String(cfg.consecutive_sync_threshold) + " errors", "restartAt", "sy");
+  message += "<div class=\"row\"><span>Error log</span><span><a href=\"/clear_errors\">Clear error log</a></span></div>\r\n";
   rowToggle(message, "Developer mode", cfg.dev_mode, "dev_mode", "sy", "Enabled", "Disabled");
   rowText(message, "Current firmware version", M5NSversion);
   message += "<div class=\"row\"><span></span><span><a href=\"/fwcheck\">Check for update</a></span></div>\r\n";
@@ -1006,6 +1008,7 @@ void handleEditConfigItem() {
     if(String(w3srv.arg(0)).equals("restartAt")) {
       editRow(message, "Restart at time", "<input type=\"text\" name=\"restart_at_time\" value=\"" + String(cfg.restart_at_time) + "\" size=\"5\" maxlength=\"5\">", "24h HH:MM, or NORES for never");
       editRow(message, "Restart after errors", "<input type=\"text\" name=\"restart_at_logged_errors\" value=\"" + String(cfg.restart_at_logged_errors) + "\" size=\"5\" maxlength=\"5\">", "0 = never");
+      editRow(message, "Consecutive sync threshold", "<input type=\"text\" name=\"consecutive_sync_threshold\" value=\"" + String(cfg.consecutive_sync_threshold) + "\" size=\"5\" maxlength=\"5\">", "failures before logging error (default 5)");
     }
     if(String(w3srv.arg(0)).equals("alarmTiming")) {
       editRow(message, "Snooze timeout", "<input type=\"text\" name=\"snooze_timeout\" value=\"" + String(cfg.snooze_timeout) + "\" size=\"5\" maxlength=\"5\"> min");
@@ -1167,6 +1170,9 @@ void handleGetEditConfigItem() {
     }
     if(String(w3srv.argName(i)).equals("restart_at_logged_errors")) {
       cfg.restart_at_logged_errors = String(w3srv.arg(i)).toInt();
+    }
+    if(String(w3srv.argName(i)).equals("consecutive_sync_threshold")) {
+      cfg.consecutive_sync_threshold = String(w3srv.arg(i)).toInt();
     }
     if(String(w3srv.argName(i)).equals("snooze_timeout")) {
       cfg.snooze_timeout = String(w3srv.arg(i)).toInt();
@@ -1391,6 +1397,7 @@ static void persistConfigToDisk() {
     dstFil.print("default_page = "); dstFil.print(cfg.default_page); dstFil.print("\r\n");
     dstFil.print("restart_at_time = "); dstFil.print(cfg.restart_at_time); dstFil.print("\r\n");
     dstFil.print("restart_at_logged_errors = "); dstFil.print(cfg.restart_at_logged_errors); dstFil.print("\r\n");
+    dstFil.print("consecutive_sync_threshold = "); dstFil.print(cfg.consecutive_sync_threshold); dstFil.print("\r\n");
     dstFil.print("\r\n");
     dstFil.print("snooze_timeout = "); dstFil.print(cfg.snooze_timeout); dstFil.print("\r\n");
     dstFil.print("alarm_repeat = "); dstFil.print(cfg.alarm_repeat); dstFil.print("\r\n");
@@ -1523,6 +1530,23 @@ void handleClearConfigFlash() {
     prefs.end();
   }
   ESP.restart();
+}
+
+void handleClearErrors() {
+  clearErrorLog();
+  if (screenOn) {
+    draw_page();
+  }
+  w3srv.sendHeader("Location", "/?s=sy");
+  w3srv.send(303, "text/plain", "");
+}
+
+void handleApiClearErrors() {
+  clearErrorLog();
+  if (screenOn) {
+    draw_page();
+  }
+  w3srv.send(200, "application/json", "{\"status\":\"ok\",\"errors_cleared\":true}");
 }
 
 void handleNotFound() {
@@ -1680,25 +1704,27 @@ void handleApiStatus() {
   
   float currentSgv = cfg.show_mgdl ? ns.sensSgv : ns.sensSgvMgDl;
   
-  char buf[384];
+  char buf[512];
   if (cfg.show_mgdl) {
     snprintf(buf, sizeof(buf),
-             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"snooze_remaining_min\":%d,\"snooze_remaining_sec\":%d,\"snooze_until\":%lu,\"sgv\":%.1f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
+             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"snooze_remaining_min\":%d,\"snooze_remaining_sec\":%d,\"snooze_until\":%lu,\"sgv\":%.1f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d,\"consecutive_sync_threshold\":%d,\"consecutive_sync_failures\":%u}",
              screenOn ? "on" : "off", lcdBrightness, dispPage, (unsigned long)refreshIntervalSec,
              snoozeActive ? "true" : "false", remMin, remSec, (unsigned long)snoozeUntil, currentSgv,
              isNightModeActive() ? "true" : "false",
              cfg.night_mode_enabled ? "true" : "false",
              powerSource.c_str(),
-             isCharging ? "true" : "false", batPercentage);
+             isCharging ? "true" : "false", batPercentage,
+             cfg.consecutive_sync_threshold, consecutiveSyncFailures);
   } else {
     snprintf(buf, sizeof(buf),
-             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"snooze_remaining_min\":%d,\"snooze_remaining_sec\":%d,\"snooze_until\":%lu,\"sgv\":%.0f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d}",
+             "{\"screen\":\"%s\",\"brightness\":%d,\"page\":%d,\"refresh_interval\":%lu,\"snooze_active\":%s,\"snooze_remaining_min\":%d,\"snooze_remaining_sec\":%d,\"snooze_until\":%lu,\"sgv\":%.0f,\"night_mode\":%s,\"night_mode_enabled\":%s,\"power_source\":\"%s\",\"is_charging\":%s,\"battery_percentage\":%d,\"consecutive_sync_threshold\":%d,\"consecutive_sync_failures\":%u}",
              screenOn ? "on" : "off", lcdBrightness, dispPage, (unsigned long)refreshIntervalSec,
              snoozeActive ? "true" : "false", remMin, remSec, (unsigned long)snoozeUntil, currentSgv,
              isNightModeActive() ? "true" : "false",
              cfg.night_mode_enabled ? "true" : "false",
              powerSource.c_str(),
-             isCharging ? "true" : "false", batPercentage);
+             isCharging ? "true" : "false", batPercentage,
+             cfg.consecutive_sync_threshold, consecutiveSyncFailures);
   }
   w3srv.send(200, "application/json", buf);
 }
