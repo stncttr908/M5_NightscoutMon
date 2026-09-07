@@ -131,6 +131,23 @@ vibration_strength = 512   ; 10 bit PWM value for VIBRATION UNIT motor control, 
 
 micro_dot_pHAT = 0         ; 0 = off, 1 = ON (display SGV and DELTA on I2C Pimoroni Micro Dot pHAT connected to I2C pins 21+22)
 
+;;;;;;;;;; WireGuard VPN client configuration (supports Nightscout, Dexcom Share & LibreLinkUp)
+
+[wireguard]
+wireguard_enabled = 0          ; 1 = enable WireGuard VPN client, 0 = disable (default)
+wireguard_local_ip = 10.8.0.2  ; client VPN IP address
+wireguard_subnet = 255.255.255.0 ; subnet mask (default 255.255.255.0)
+wireguard_gateway = 10.8.0.1   ; gateway IP (optional)
+wireguard_endpoint = vpn.yourdomain.com ; WireGuard server hostname or public IP
+wireguard_port = 51820         ; WireGuard server UDP port (default 51820)
+wireguard_peer_pubkey = <ServerPublicKeyBase64==> ; server public key (Base64)
+wireguard_privkey = <ClientPrivateKeyBase64==>     ; client private key (Base64)
+; wireguard_preshared_key = <OptionalPresharedKeyBase64==> ; optional pre-shared key
+; wireguard_dns = 10.10.1.53   ; optional primary DNS server (e.g. internal homelab DNS)
+; wireguard_dns2 = 10.10.1.153 ; optional secondary DNS server
+wireguard_fallback_timeout = 15 ; seconds to wait for handshake before falling back to direct Wi-Fi (0 = disable)
+wireguard_fallback_retry = 60   ; seconds between reconnect attempts in fallback mode
+
 ;;;;;;;;;;  you can connect up to 9 WiFi access points, no need to setup all, one is enough
 
 [wlan1]

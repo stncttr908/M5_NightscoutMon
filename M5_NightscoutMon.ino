@@ -80,6 +80,7 @@ Adafruit_NeoPixel pixels(10, 15, NEO_GRB + NEO_KHZ800);
 #include "M5NSDexcom.h"
 #include "M5NSLibre.h"
 #include "M5NSNightscout.h"
+#include "M5NSWireGuard.h"
 
 #include <Wire.h>     //The DHT12 uses I2C comunication.
 #include "DHT12.h"
@@ -750,9 +751,12 @@ void getPowerTelemetry(String &powerSource, bool &isCharging, int &batPercentage
   bool isMains = false;
 #if !defined(DEVICE_JC3248W535) && !defined(DEVICE_WS_TOUCH_LCD_35)
   auto pwrType = M5.Power.getType();
+#if defined(CONFIG_IDF_TARGET_ESP32)
   if (pwrType == m5::Power_Class::pmic_t::pmic_axp192) {
     isMains = M5.Power.Axp192.isACIN() || M5.Power.Axp192.isVBUS() || (M5.Power.getVBUSVoltage() > 3800);
-  } else if (pwrType == m5::Power_Class::pmic_t::pmic_axp2101) {
+  } else
+#endif
+  if (pwrType == m5::Power_Class::pmic_t::pmic_axp2101) {
     isMains = (M5.Power.getVBUSVoltage() > 3800) || (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
   } else {
     isMains = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging) || (bl >= 100);
@@ -777,6 +781,7 @@ void buttons_test() {
   bool btnB_wasPressed = M5.BtnB.wasPressed();
   bool btnC_wasPressed = M5.BtnC.wasPressed();
 
+#if !defined(DEVICE_JC3248W535) && !defined(DEVICE_WS_TOUCH_LCD_35)
   if (M5.Touch.isEnabled() && M5.Touch.getCount() > 0) {
     auto t = M5.Touch.getDetail();
     if (t.wasPressed() && t.y >= 200) {
@@ -785,6 +790,7 @@ void buttons_test() {
       else btnC_wasPressed = true;
     }
   }
+#endif
 
   if(btnA_wasPressed) {
     Serial.printf("A");
@@ -999,6 +1005,18 @@ static void wifi_connect_sta() {
   }
   Serial.println();
   printLocalTime();
+
+  if (cfg.wireguard_enabled) {
+    Serial.println("Connecting WireGuard...");
+    M5.Lcd.println("Connecting WireGuard...");
+    if (wireguardConnect()) {
+      Serial.println("WireGuard connected.");
+      M5.Lcd.printf("WG IP: %s\r\n", cfg.wireguard_local_ip);
+    } else {
+      Serial.println("WireGuard fallback active.");
+      M5.Lcd.println("WG fallback (direct Wi-Fi)");
+    }
+  }
 
   Serial.println("Connection done");
   M5.Lcd.println("Connection done");
@@ -2018,6 +2036,13 @@ void draw_page() {
         sprintf(tmpStr, "%u.%u.%u.%u=%s.local", ip[0], ip[1], ip[2], ip[3], cfg.deviceName);
       else
         sprintf(tmpStr, "IP Address: %u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+      if(cfg.wireguard_enabled) {
+        if(wireguardGetState() == WG_STATE_CONNECTED) {
+          snprintf(tmpStr + strlen(tmpStr), sizeof(tmpStr) - strlen(tmpStr), " WG:%s", cfg.wireguard_local_ip);
+        } else {
+          snprintf(tmpStr + strlen(tmpStr), sizeof(tmpStr) - strlen(tmpStr), " WG:%s", wireguardGetStateStr());
+        }
+      }
       M5.Lcd.drawString(tmpStr, 0, 20+9*18);
       sprintf(tmpStr, "Version: %s", M5NSversion.c_str());
       M5.Lcd.drawString(tmpStr, 0, 20+10*18);
@@ -2410,6 +2435,7 @@ void loop() {
     w3srv.handleClient();
   }
   if (!is_task_bootstrapping) {
+    wireguardLoop();
     mqttLoop();
   }
   delay(20); // was 10

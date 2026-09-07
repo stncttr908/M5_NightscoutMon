@@ -2,6 +2,13 @@
 
 ## Revisions
 
+### 4 September 2026 (WireGuard VPN client integration)
+
+* Embedded WireGuard VPN client support (`wireguard_enabled`), enabling secure end-to-end tunneling for self-hosted Nightscout instances (e.g. within private homelab subnets) as well as cloud sources (Dexcom Share and LibreLinkUp) when traveling or connected to untrusted Wi-Fi networks.
+* Integrated the lightweight `WireGuard-ESP32` library (Daniel Hope `wireguard-lwip` / Kenta Ida) on top of lwIP. Adds full-tunnel interface routing (`0.0.0.0/0`), MTU/MSS clamping (1420/1380), and automatic post-NTP cryptographic handshake initiation.
+* Added custom primary and secondary DNS steering (`wireguard_dns`, `wireguard_dns2`), allowing internal homelab DNS resolvers (e.g. `10.10.1.53` and `10.10.1.153`) to resolve private instance hostnames while preserving and restoring standard DHCP DNS upon disconnect.
+* Integrated a reachability monitor and fallback timer (`wireguard_fallback_timeout`, `wireguard_fallback_retry`): if the WireGuard endpoint is unreachable or handshakes time out, traffic seamlessly falls back to direct Wi-Fi so monitoring is never blocked, while automatically retrying the VPN in the background.
+* Added full configuration surfaces across `M5NS.INI`, persistent NVS flash, and the Web Configuration UI (new "WireGuard VPN" collapsible section with status indicator). Status also displayed on the diagnostic error log screen (Page 3).
 
 ### 15 August 2026 (Waveshare ESP32-Touch-LCD-3.5 port)
 

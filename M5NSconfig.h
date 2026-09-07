@@ -79,6 +79,19 @@ struct tConfig {
   int udp_sync_port    = 50555; // UDP port (all devices on LAN must match)
   int udp_sync_snooze  = 1;  // 1 = broadcast snooze state changes to peers
   int udp_sync_refresh = 1;  // 1 = broadcast refresh-interval changes to peers
+  int  wireguard_enabled = 0;                  // 0 = off, 1 = on
+  char wireguard_local_ip[16] = "";            // VPN interface IP, e.g. "10.8.0.2"
+  char wireguard_subnet[16] = "255.255.255.0"; // VPN subnet mask
+  char wireguard_gateway[16] = "";           // VPN gateway (optional), e.g. "10.8.0.1"
+  char wireguard_endpoint[128] = "";          // Server endpoint domain or IP
+  int  wireguard_port = 51820;                // Server UDP port
+  char wireguard_peer_pubkey[48] = "";        // Server public key (Base64)
+  char wireguard_privkey[48] = "";            // Client private key (Base64)
+  char wireguard_preshared_key[48] = "";      // Optional Pre-Shared Key (Base64)
+  char wireguard_dns[16] = "";                // Optional primary DNS (e.g. "10.10.1.53")
+  char wireguard_dns2[16] = "";               // Optional secondary DNS (e.g. "10.10.1.153")
+  int  wireguard_fallback_timeout = 15;       // Seconds to wait for handshake before fallback (0 = disable)
+  int  wireguard_fallback_retry = 60;         // Seconds between retry attempts in fallback mode
   char wlanssid[10][64];
   char wlanpass[10][64];
 } ;

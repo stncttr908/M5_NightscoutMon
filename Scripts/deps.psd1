@@ -15,6 +15,7 @@
         @{ Name = 'M5GFX';                   Version = '0.2.9' }
         @{ Name = 'ArduinoJson';             Version = '7.4.2' }
         @{ Name = 'Adafruit NeoPixel';       Version = '1.15.1' }
+        @{ Name = 'WireGuard-ESP32';         Version = '0.1.5' }
         @{ Name = 'GFX Library for Arduino'; Version = '1.6.0'; Exact = $true; OnlyFor = 'JC3248W535'
            Note = '1.6.1 breaks the AXS15231B panel of the JC3248W535' }
     )

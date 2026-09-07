@@ -19,6 +19,7 @@
 #include "M5NSLibre.h"
 #include "externs.h"
 #include "M5NSUdpSync.h"
+#include "M5NSWireGuard.h"
 #include <esp32/rom/miniz.h>
 
 // OTA firmware is served straight from this repo (raw.githubusercontent.com, master
@@ -195,6 +196,13 @@ void handleRoot() {
     WiFi.macAddress(mac);
     String macStr = String(mac[5],HEX) + ":" + String(mac[4],HEX) + ":" + String(mac[3],HEX) + ":" + String(mac[2],HEX) + ":" + String(mac[1],HEX) + ":" + String(mac[0],HEX);
     rowText(message, "MAC address", macStr);
+    if (cfg.wireguard_enabled) {
+      String wgStatus = wireguardGetStateStr();
+      if (wireguardGetState() == WG_STATE_CONNECTED && cfg.wireguard_local_ip[0] != '\0') {
+        wgStatus += " (" + String(cfg.wireguard_local_ip) + ")";
+      }
+      rowText(message, "WireGuard VPN", wgStatus);
+    }
   }
   sprintf(tmpStr, "%d%%", getBatteryLevel());
   rowText(message, "Battery status", tmpStr);
@@ -389,6 +397,23 @@ void handleRoot() {
   rowEdit(message, "UDP port", String(cfg.udp_sync_port), "udp_sync_port", "ls");
   rowToggle(message, "Sync snooze state", cfg.udp_sync_snooze, "udp_sync_snooze", "ls");
   rowToggle(message, "Sync refresh interval", cfg.udp_sync_refresh, "udp_sync_refresh", "ls");
+  message += "</details>\r\n";
+
+  // ---- WireGuard VPN ----
+  detailsOpen(message, "wg", "WireGuard VPN", sec);
+  rowToggle(message, "WireGuard enabled", cfg.wireguard_enabled, "wireguard_enabled", "wg");
+  {
+    String statusStr = wireguardGetStateStr();
+    if (wireguardGetState() == WG_STATE_CONNECTED && cfg.wireguard_local_ip[0] != '\0') {
+      statusStr += " (" + String(cfg.wireguard_local_ip) + ")";
+    }
+    rowEdit(message, "VPN status", statusStr, "wireguard", "wg");
+  }
+  rowEdit(message, "Endpoint & port", (cfg.wireguard_endpoint[0] != 0) ? (String(cfg.wireguard_endpoint) + ":" + String(cfg.wireguard_port)) : String("(none)"), "wireguard", "wg");
+  rowEdit(message, "Interface IP & mask", (cfg.wireguard_local_ip[0] != 0) ? (String(cfg.wireguard_local_ip) + " / " + String(cfg.wireguard_subnet)) : String("(none)"), "wireguard", "wg");
+  rowEdit(message, "Gateway (optional)", (cfg.wireguard_gateway[0] != 0) ? String(cfg.wireguard_gateway) : String("(none)"), "wireguard", "wg");
+  rowEdit(message, "DNS servers", (cfg.wireguard_dns[0] != 0) ? (String(cfg.wireguard_dns) + (cfg.wireguard_dns2[0] != 0 ? (", " + String(cfg.wireguard_dns2)) : "")) : String("(DHCP default)"), "wireguard", "wg");
+  rowEdit(message, "Fallback timeout", String(cfg.wireguard_fallback_timeout) + "s (retry: " + String(cfg.wireguard_fallback_retry) + "s)", "wireguard", "wg");
   message += "</details>\r\n";
 
   // ---- Hardware add-ons ----
@@ -938,6 +963,13 @@ void handleSwitchConfig() {
         if(haveVal) cfg.udp_sync_refresh = (val!=0);
         else cfg.udp_sync_refresh = !cfg.udp_sync_refresh;
       }
+      else if(param.equals("wireguard_enabled")) {
+        if(haveVal) cfg.wireguard_enabled = (val!=0);
+        else cfg.wireguard_enabled = !cfg.wireguard_enabled;
+        saveConfigToFlash(&cfg);
+        if(cfg.wireguard_enabled) wireguardConnect();
+        else wireguardStop();
+      }
     }
   }
 
@@ -993,6 +1025,20 @@ void handleEditConfigItem() {
     }
     if(String(w3srv.arg(0)).equals("udp_sync_port")) {
       editRow(message, "UDP sync port", "<input type=\"text\" name=\"udp_sync_port\" value=\"" + String(cfg.udp_sync_port) + "\" size=\"6\" maxlength=\"5\">", "default 50555 — all devices on the LAN must match");
+    }
+    if(String(w3srv.arg(0)).equals("wireguard")) {
+      editRow(message, "Interface IP", "<input type=\"text\" name=\"wireguard_local_ip\" value=\"" + String(cfg.wireguard_local_ip) + "\" size=\"18\" maxlength=\"15\">", "e.g. 10.8.0.2");
+      editRow(message, "Subnet mask", "<input type=\"text\" name=\"wireguard_subnet\" value=\"" + String(cfg.wireguard_subnet) + "\" size=\"18\" maxlength=\"15\">", "default 255.255.255.0");
+      editRow(message, "Gateway (opt.)", "<input type=\"text\" name=\"wireguard_gateway\" value=\"" + String(cfg.wireguard_gateway) + "\" size=\"18\" maxlength=\"15\">", "optional, e.g. 10.8.0.1");
+      editRow(message, "Endpoint address", "<input type=\"text\" name=\"wireguard_endpoint\" value=\"" + String(cfg.wireguard_endpoint) + "\" size=\"28\" maxlength=\"127\">", "hostname or public IP");
+      editRow(message, "Endpoint port", "<input type=\"text\" name=\"wireguard_port\" value=\"" + String(cfg.wireguard_port) + "\" size=\"6\" maxlength=\"5\">", "default 51820");
+      editRow(message, "Server public key", "<input type=\"text\" name=\"wireguard_peer_pubkey\" value=\"" + String(cfg.wireguard_peer_pubkey) + "\" size=\"28\" maxlength=\"44\">", "Base64 44-char key");
+      editRow(message, "Client private key", "<input type=\"password\" name=\"wireguard_privkey\" value=\"" + String(cfg.wireguard_privkey) + "\" size=\"28\" maxlength=\"44\">", "Base64 44-char key, stored on device in plain text");
+      editRow(message, "Pre-Shared Key (opt.)", "<input type=\"password\" name=\"wireguard_preshared_key\" value=\"" + String(cfg.wireguard_preshared_key) + "\" size=\"28\" maxlength=\"44\">", "optional PSK, stored in plain text");
+      editRow(message, "Primary DNS", "<input type=\"text\" name=\"wireguard_dns\" value=\"" + String(cfg.wireguard_dns) + "\" size=\"18\" maxlength=\"15\">", "optional, e.g. 10.10.1.53 (blank = DHCP)");
+      editRow(message, "Secondary DNS", "<input type=\"text\" name=\"wireguard_dns2\" value=\"" + String(cfg.wireguard_dns2) + "\" size=\"18\" maxlength=\"15\">", "optional, e.g. 10.10.1.153 (blank = none)");
+      editRow(message, "Fallback timeout", "<input type=\"text\" name=\"wireguard_fallback_timeout\" value=\"" + String(cfg.wireguard_fallback_timeout) + "\" size=\"5\" maxlength=\"4\"> s", "handshake timeout before fallback (0 = disable)");
+      editRow(message, "Fallback retry", "<input type=\"text\" name=\"wireguard_fallback_retry\" value=\"" + String(cfg.wireguard_fallback_retry) + "\" size=\"5\" maxlength=\"4\"> s", "interval between reconnect attempts in fallback mode");
     }
     if(String(w3srv.arg(0)).equals("deviceName")) {
       editRow(message, "Device name", "<input type=\"text\" name=\"deviceName\" value=\"" + String(cfg.deviceName) + "\" size=\"12\" maxlength=\"32\">.local");
@@ -1137,6 +1183,42 @@ void handleGetEditConfigItem() {
     if(String(w3srv.argName(i)).equals("udp_sync_port")) {
       cfg.udp_sync_port = String(w3srv.arg(i)).toInt();
       udpSyncInit();
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_local_ip")) {
+      strncpy(cfg.wireguard_local_ip, String(w3srv.arg(i)).c_str(), 16);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_subnet")) {
+      strncpy(cfg.wireguard_subnet, String(w3srv.arg(i)).c_str(), 16);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_gateway")) {
+      strncpy(cfg.wireguard_gateway, String(w3srv.arg(i)).c_str(), 16);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_endpoint")) {
+      strncpy(cfg.wireguard_endpoint, String(w3srv.arg(i)).c_str(), 128);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_port")) {
+      cfg.wireguard_port = String(w3srv.arg(i)).toInt();
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_peer_pubkey")) {
+      strncpy(cfg.wireguard_peer_pubkey, String(w3srv.arg(i)).c_str(), 48);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_privkey")) {
+      strncpy(cfg.wireguard_privkey, String(w3srv.arg(i)).c_str(), 48);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_preshared_key")) {
+      strncpy(cfg.wireguard_preshared_key, String(w3srv.arg(i)).c_str(), 48);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_dns")) {
+      strncpy(cfg.wireguard_dns, String(w3srv.arg(i)).c_str(), 16);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_dns2")) {
+      strncpy(cfg.wireguard_dns2, String(w3srv.arg(i)).c_str(), 16);
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_fallback_timeout")) {
+      cfg.wireguard_fallback_timeout = String(w3srv.arg(i)).toInt();
+    }
+    if(String(w3srv.argName(i)).equals("wireguard_fallback_retry")) {
+      cfg.wireguard_fallback_retry = String(w3srv.arg(i)).toInt();
     }
     if(String(w3srv.argName(i)).equals("mqtt_user")) {
       strncpy(cfg.mqtt_user, String(w3srv.arg(i)).c_str(), 64);
@@ -1454,6 +1536,23 @@ static void persistConfigToDisk() {
     dstFil.print("udp_sync_snooze = ");  dstFil.print(cfg.udp_sync_snooze);  dstFil.print("\r\n");
     dstFil.print("udp_sync_refresh = "); dstFil.print(cfg.udp_sync_refresh); dstFil.print("\r\n");
     dstFil.print("\r\n");
+    dstFil.print("; WireGuard VPN\r\n");
+    dstFil.print("wireguard_enabled = ");          dstFil.print(cfg.wireguard_enabled);          dstFil.print("\r\n");
+    dstFil.print("wireguard_local_ip = ");         dstFil.print(cfg.wireguard_local_ip);         dstFil.print("\r\n");
+    dstFil.print("wireguard_subnet = ");           dstFil.print(cfg.wireguard_subnet);           dstFil.print("\r\n");
+    dstFil.print("wireguard_gateway = ");          dstFil.print(cfg.wireguard_gateway);          dstFil.print("\r\n");
+    dstFil.print("wireguard_endpoint = ");         dstFil.print(cfg.wireguard_endpoint);         dstFil.print("\r\n");
+    dstFil.print("wireguard_port = ");             dstFil.print(cfg.wireguard_port);             dstFil.print("\r\n");
+    dstFil.print("wireguard_peer_pubkey = ");      dstFil.print(cfg.wireguard_peer_pubkey);      dstFil.print("\r\n");
+    dstFil.print("wireguard_privkey = ");          dstFil.print(cfg.wireguard_privkey);          dstFil.print("\r\n");
+    if(strlen(cfg.wireguard_preshared_key) > 0) {
+      dstFil.print("wireguard_preshared_key = ");  dstFil.print(cfg.wireguard_preshared_key);  dstFil.print("\r\n");
+    }
+    dstFil.print("wireguard_dns = ");              dstFil.print(cfg.wireguard_dns);              dstFil.print("\r\n");
+    dstFil.print("wireguard_dns2 = ");             dstFil.print(cfg.wireguard_dns2);             dstFil.print("\r\n");
+    dstFil.print("wireguard_fallback_timeout = "); dstFil.print(cfg.wireguard_fallback_timeout); dstFil.print("\r\n");
+    dstFil.print("wireguard_fallback_retry = ");   dstFil.print(cfg.wireguard_fallback_retry);   dstFil.print("\r\n");
+    dstFil.print("\r\n");
     for(int i=0; i<10; i++) {
       if(cfg.wlanssid[i][0] != 0) {
         dstFil.print("[wlan"); dstFil.print(i); dstFil.print("]\r\n");
@@ -1469,6 +1568,9 @@ static void persistConfigToDisk() {
   }
 
   saveConfigToFlash(&cfg);
+  if (cfg.wireguard_enabled) {
+    wireguardConnect();
+  }
 }
 
 void handleSaveConfig() {

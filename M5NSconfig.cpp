@@ -146,6 +146,20 @@ void readConfigFromFlash(tConfig *cfg) {
     cfg->udp_sync_port    = prefs.getInt("udp_sync_port", 50555);
     cfg->udp_sync_snooze  = prefs.getInt("udp_sync_snz", 1);
     cfg->udp_sync_refresh = prefs.getInt("udp_sync_ref", 1);
+    cfg->wireguard_enabled = prefs.getInt("wg_enabled", 0);
+    prefs.getString("wg_local_ip", cfg->wireguard_local_ip, 16);
+    prefs.getString("wg_subnet", cfg->wireguard_subnet, 16);
+    if (strlen(cfg->wireguard_subnet) == 0) strcpy(cfg->wireguard_subnet, "255.255.255.0");
+    prefs.getString("wg_gateway", cfg->wireguard_gateway, 16);
+    prefs.getString("wg_endpoint", cfg->wireguard_endpoint, 128);
+    cfg->wireguard_port = prefs.getInt("wg_port", 51820);
+    prefs.getString("wg_pubkey", cfg->wireguard_peer_pubkey, 48);
+    prefs.getString("wg_privkey", cfg->wireguard_privkey, 48);
+    prefs.getString("wg_psk", cfg->wireguard_preshared_key, 48);
+    prefs.getString("wg_dns", cfg->wireguard_dns, 16);
+    prefs.getString("wg_dns2", cfg->wireguard_dns2, 16);
+    cfg->wireguard_fallback_timeout = prefs.getInt("wg_fb_timeout", 15);
+    cfg->wireguard_fallback_retry = prefs.getInt("wg_fb_retry", 60);
     char tmps[64];
     int wlans_defined_count = 0;
     for(int i=0; i<10; i++) {
@@ -250,6 +264,19 @@ void saveConfigToFlash(tConfig *cfg) {
     prefs.putInt("udp_sync_port", cfg->udp_sync_port);
     prefs.putInt("udp_sync_snz", cfg->udp_sync_snooze);
     prefs.putInt("udp_sync_ref", cfg->udp_sync_refresh);
+    prefs.putInt("wg_enabled", cfg->wireguard_enabled);
+    prefs.putString("wg_local_ip", cfg->wireguard_local_ip);
+    prefs.putString("wg_subnet", cfg->wireguard_subnet);
+    prefs.putString("wg_gateway", cfg->wireguard_gateway);
+    prefs.putString("wg_endpoint", cfg->wireguard_endpoint);
+    prefs.putInt("wg_port", cfg->wireguard_port);
+    prefs.putString("wg_pubkey", cfg->wireguard_peer_pubkey);
+    prefs.putString("wg_privkey", cfg->wireguard_privkey);
+    prefs.putString("wg_psk", cfg->wireguard_preshared_key);
+    prefs.putString("wg_dns", cfg->wireguard_dns);
+    prefs.putString("wg_dns2", cfg->wireguard_dns2);
+    prefs.putInt("wg_fb_timeout", cfg->wireguard_fallback_timeout);
+    prefs.putInt("wg_fb_retry", cfg->wireguard_fallback_retry);
     char tmps[64];
     for(int i=0; i<10; i++) {
       if(cfg->wlanssid[i][0] != 0) {
@@ -1011,6 +1038,54 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
   if (ini.getValue("config", "udp_sync_refresh", buffer, bufferLen) || ini.getValue("udpsync", "refresh", buffer, bufferLen) || ini.getValue("udpsync", "udp_sync_refresh", buffer, bufferLen)) {
     cfg->udp_sync_refresh = atoi(buffer);
     Serial.printf("udp_sync_refresh = %d\r\n", cfg->udp_sync_refresh);
+  }
+
+  if (ini.getValue("config", "wireguard_enabled", buffer, bufferLen) || ini.getValue("wireguard", "enabled", buffer, bufferLen) || ini.getValue("wireguard", "wireguard_enabled", buffer, bufferLen)) {
+    cfg->wireguard_enabled = atoi(buffer);
+    Serial.printf("wireguard_enabled = %d\r\n", cfg->wireguard_enabled);
+  }
+  if (ini.getValue("config", "wireguard_local_ip", buffer, bufferLen) || ini.getValue("wireguard", "local_ip", buffer, bufferLen) || ini.getValue("wireguard", "ip", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_local_ip, buffer, 16);
+    Serial.printf("wireguard_local_ip = %s\r\n", cfg->wireguard_local_ip);
+  }
+  if (ini.getValue("config", "wireguard_subnet", buffer, bufferLen) || ini.getValue("wireguard", "subnet", buffer, bufferLen) || ini.getValue("wireguard", "netmask", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_subnet, buffer, 16);
+  }
+  if (ini.getValue("config", "wireguard_gateway", buffer, bufferLen) || ini.getValue("wireguard", "gateway", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_gateway, buffer, 16);
+  }
+  if (ini.getValue("config", "wireguard_endpoint", buffer, bufferLen) || ini.getValue("wireguard", "endpoint", buffer, bufferLen) || ini.getValue("wireguard", "server", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_endpoint, buffer, 128);
+    Serial.printf("wireguard_endpoint = %s\r\n", cfg->wireguard_endpoint);
+  }
+  if (ini.getValue("config", "wireguard_port", buffer, bufferLen) || ini.getValue("wireguard", "port", buffer, bufferLen)) {
+    cfg->wireguard_port = atoi(buffer);
+    Serial.printf("wireguard_port = %d\r\n", cfg->wireguard_port);
+  }
+  if (ini.getValue("config", "wireguard_peer_pubkey", buffer, bufferLen) || ini.getValue("wireguard", "peer_pubkey", buffer, bufferLen) || ini.getValue("wireguard", "public_key", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_peer_pubkey, buffer, 48);
+  }
+  if (ini.getValue("config", "wireguard_privkey", buffer, bufferLen) || ini.getValue("wireguard", "privkey", buffer, bufferLen) || ini.getValue("wireguard", "private_key", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_privkey, buffer, 48);
+  }
+  if (ini.getValue("config", "wireguard_preshared_key", buffer, bufferLen) || ini.getValue("wireguard", "preshared_key", buffer, bufferLen) || ini.getValue("wireguard", "psk", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_preshared_key, buffer, 48);
+  }
+  if (ini.getValue("config", "wireguard_dns", buffer, bufferLen) || ini.getValue("wireguard", "dns", buffer, bufferLen) || ini.getValue("wireguard", "dns1", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_dns, buffer, 16);
+    Serial.printf("wireguard_dns = %s\r\n", cfg->wireguard_dns);
+  }
+  if (ini.getValue("config", "wireguard_dns2", buffer, bufferLen) || ini.getValue("wireguard", "dns2", buffer, bufferLen)) {
+    strlcpy(cfg->wireguard_dns2, buffer, 16);
+    Serial.printf("wireguard_dns2 = %s\r\n", cfg->wireguard_dns2);
+  }
+  if (ini.getValue("config", "wireguard_fallback_timeout", buffer, bufferLen) || ini.getValue("wireguard", "fallback_timeout", buffer, bufferLen)) {
+    cfg->wireguard_fallback_timeout = atoi(buffer);
+    Serial.printf("wireguard_fallback_timeout = %d\r\n", cfg->wireguard_fallback_timeout);
+  }
+  if (ini.getValue("config", "wireguard_fallback_retry", buffer, bufferLen) || ini.getValue("wireguard", "fallback_retry", buffer, bufferLen)) {
+    cfg->wireguard_fallback_retry = atoi(buffer);
+    Serial.printf("wireguard_fallback_retry = %d\r\n", cfg->wireguard_fallback_retry);
   }
 
   int wlans_defined_count = 0;
