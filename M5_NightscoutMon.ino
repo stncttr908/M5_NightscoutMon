@@ -1173,16 +1173,19 @@ void drawGraphPage(struct NSinfo *ns) {
   M5.Lcd.drawString(sensSgvStr, 4, 2);
   int tw = M5.Lcd.textWidth(sensSgvStr);
 
+  int arrowCenterX = 4 + tw + 18;
   if(ns->arrowAngle != 180) {
-    drawArrow(4 + tw + 18, 16, 6, ns->arrowAngle + 85, 20, 20, glColor);
+    drawArrow(arrowCenterX, 15, 6, ns->arrowAngle + 85, 18, 18, glColor);
   }
 
+  int deltaX = (ns->arrowAngle != 180) ? (arrowCenterX + 22) : (4 + tw + 10);
   M5.Lcd.setFreeFont(FSSB12);
   if(abs(ns->delta_mgdl) > 7)
     M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
   else
     M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  M5.Lcd.drawString(ns->delta_display, 4 + tw + 34, 6);
+  M5.Lcd.drawString(ns->delta_display, deltaX, 6);
+  int deltaW = M5.Lcd.textWidth(ns->delta_display);
 
   struct tm timeinfo;
   int sensorDifSec = 0;
@@ -1198,8 +1201,9 @@ void drawGraphPage(struct NSinfo *ns) {
   } else {
     snprintf(ageStr, sizeof(ageStr), "%dm", sensorDifMin);
   }
-  M5.Lcd.setTextColor((sensorDifMin > 15) ? TFT_RED : ((sensorDifMin > 5) ? TFT_WHITE : TFT_LIGHTGREY), TFT_BLACK);
-  M5.Lcd.drawString(ageStr, 212, 6);
+  M5.Lcd.setTextColor((sensorDifMin > 15) ? TFT_RED : ((sensorDifMin > 5) ? TFT_WHITE : TFT_DARKGREY), TFT_BLACK);
+  int ageX = deltaX + deltaW + 16;
+  M5.Lcd.drawString(ageStr, ageX, 6);
 
   drawBatteryStatus(icon_xpos[2], icon_ypos[2]);
   drawLogWarningIcon();
@@ -1214,6 +1218,21 @@ void drawGraphPage(struct NSinfo *ns) {
 
   float targetHigh = cfg.yellow_high;
   float targetLow  = cfg.yellow_low;
+
+  if(cfg.show_mgdl) {
+    // Snap close conversions (e.g. 9.9 -> 178..181) to clean integer thresholds
+    int mgdlHigh = (int)round(targetHigh * 18.018f);
+    if(mgdlHigh >= 178 && mgdlHigh <= 181) {
+      targetHigh = 180.0f / 18.018f;
+    }
+    int mgdlLow = (int)round(targetLow * 18.018f);
+    if(mgdlLow >= 78 && mgdlLow <= 81) {
+      targetLow = 80.0f / 18.018f;
+    } else if(mgdlLow >= 68 && mgdlLow <= 71) {
+      targetLow = 70.0f / 18.018f;
+    }
+  }
+
   float yMin = 2.8f;  // ~50 mg/dL baseline min
   float yMax = 14.0f; // ~250 mg/dL baseline max
 
@@ -1265,19 +1284,18 @@ void drawGraphPage(struct NSinfo *ns) {
 
   char lblStr[16];
   if(cfg.show_mgdl) {
-    snprintf(lblStr, sizeof(lblStr), "%.0f", targetHigh * 18.0f);
+    snprintf(lblStr, sizeof(lblStr), "%d", (int)round(targetHigh * 18.018f));
   } else {
     snprintf(lblStr, sizeof(lblStr), "%.1f", targetHigh);
   }
   M5.Lcd.drawString(lblStr, gx0 - 3, ySafeHigh);
 
   if(cfg.show_mgdl) {
-    snprintf(lblStr, sizeof(lblStr), "%.0f", targetLow * 18.0f);
+    snprintf(lblStr, sizeof(lblStr), "%d", (int)round(targetLow * 18.018f));
   } else {
     snprintf(lblStr, sizeof(lblStr), "%.1f", targetLow);
   }
   M5.Lcd.drawString(lblStr, gx0 - 3, ySafeLow);
-
 
   const long timeWindowSec = 7200; // 2 hours
   time_t tNow = ns->sensTime > 0 ? ns->sensTime : time(NULL);
@@ -1286,11 +1304,13 @@ void drawGraphPage(struct NSinfo *ns) {
   for(int y = gy0 + 1; y < gy1; y += 4) {
     M5.Lcd.drawPixel(x1h, y, TFT_DARKGREY);
   }
-  M5.Lcd.setTextDatum(BC_DATUM);
   M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  M5.Lcd.setTextDatum(BL_DATUM);
+  M5.Lcd.drawString("-2h", gx0 + 3, gy1 - 2);
+  M5.Lcd.setTextDatum(BC_DATUM);
   M5.Lcd.drawString("-1h", x1h, gy1 - 2);
-  M5.Lcd.drawString("-2h", gx0 + 14, gy1 - 2);
-  M5.Lcd.drawString("now", gx1 - 12, gy1 - 2);
+  M5.Lcd.setTextDatum(BR_DATUM);
+  M5.Lcd.drawString("now", gx1 - 3, gy1 - 2);
 
   if(ns->sgvHistoryCount > 0) {
     int prevX = -1;
