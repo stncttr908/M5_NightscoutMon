@@ -1204,24 +1204,33 @@ void drawGraphPage(struct NSinfo *ns) {
   drawBatteryStatus(icon_xpos[2], icon_ypos[2]);
   drawLogWarningIcon();
 
-  // --- 2. Graph Canvas (y = 36..215) ---
-  const int gx0 = 28;
-  const int gx1 = 315;
-  const int gy0 = 38;
-  const int gy1 = 208;
+  // --- 2. Graph Canvas (y = 32..212) ---
+  const int gx0 = 34;
+  const int gx1 = 316;
+  const int gy0 = 32;
+  const int gy1 = 212;
   const int gW = gx1 - gx0;
   const int gH = gy1 - gy0;
 
-  float yMin = 3.0f;
-  float yMax = 15.0f;
+  float targetHigh = cfg.yellow_high;
+  float targetLow  = cfg.yellow_low;
+  float yMin = 2.8f;  // ~50 mg/dL baseline min
+  float yMax = 14.0f; // ~250 mg/dL baseline max
+
+  // Expand scale if readings excursion high/low
   for(int i = 0; i < ns->sgvHistoryCount; i++) {
     float val = ns->sgvHistory[i].sgv;
     time_t ep = ns->sgvHistory[i].time;
     if(val > 0 && ep > 0) {
+      if(val > 12.2f && yMax < 19.5f) { // >220 mg/dL -> expand to 350 mg/dL (~19.5 mmol/L)
+        yMax = 19.5f;
+      }
       if(val > yMax) yMax = val + 1.0f;
       if(val < yMin) yMin = val - 0.5f;
     }
   }
+  if(targetHigh > yMax) yMax = targetHigh + 1.0f;
+  if(targetLow < yMin)  yMin = targetLow - 0.5f;
   if(yMax <= yMin) yMax = yMin + 1.0f;
 
   auto toY = [&](float v) -> int {
@@ -1230,40 +1239,55 @@ void drawGraphPage(struct NSinfo *ns) {
     return gy1 - (int)(((v - yMin) / (yMax - yMin)) * (float)gH);
   };
 
-  int yYellowHigh = toY(cfg.yellow_high);
-  int yYellowLow  = toY(cfg.yellow_low);
+  int ySafeHigh = toY(targetHigh);
+  int ySafeLow  = toY(targetLow);
 
-  for(int x = gx0; x <= gx1; x += 5) {
-    M5.Lcd.drawPixel(x, yYellowHigh, TFT_DARKGREY);
-    M5.Lcd.drawPixel(x, yYellowLow,  TFT_DARKGREY);
+  // Clear canvas inside graph
+  M5.Lcd.fillRect(gx0, gy0, gW + 1, gH + 1, TFT_BLACK);
+
+  // Light shading for target range (subtle dark forest green/slate)
+  const uint16_t SHADE_COLOR = ((12 & 0xF8) << 8) | ((34 & 0xFC) << 3) | (20 >> 3);
+  if(ySafeLow > ySafeHigh) {
+    M5.Lcd.fillRect(gx0 + 1, ySafeHigh, gW - 1, ySafeLow - ySafeHigh, SHADE_COLOR);
+  }
+
+  // Draw dashed target boundary guidelines
+  for(int x = gx0; x <= gx1; x += 4) {
+    M5.Lcd.drawPixel(x, ySafeHigh, TFT_DARKGREY);
+    M5.Lcd.drawPixel(x, ySafeLow,  TFT_DARKGREY);
   }
   M5.Lcd.drawRect(gx0, gy0, gW + 1, gH + 1, TFT_DARKGREY);
 
+  // Y-axis labels (right-aligned to gx0 - 3)
   M5.Lcd.setTextDatum(MR_DATUM);
   M5.Lcd.setFreeFont(FSS9);
   M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  char yLabel[16];
+
+  char lblStr[16];
   if(cfg.show_mgdl) {
-    snprintf(yLabel, sizeof(yLabel), "%.0f", cfg.yellow_high * 18.0f);
-    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowHigh);
-    snprintf(yLabel, sizeof(yLabel), "%.0f", cfg.yellow_low * 18.0f);
-    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowLow);
+    snprintf(lblStr, sizeof(lblStr), "%.0f", targetHigh * 18.0f);
   } else {
-    snprintf(yLabel, sizeof(yLabel), "%.1f", cfg.yellow_high);
-    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowHigh);
-    snprintf(yLabel, sizeof(yLabel), "%.1f", cfg.yellow_low);
-    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowLow);
+    snprintf(lblStr, sizeof(lblStr), "%.1f", targetHigh);
   }
+  M5.Lcd.drawString(lblStr, gx0 - 3, ySafeHigh);
+
+  if(cfg.show_mgdl) {
+    snprintf(lblStr, sizeof(lblStr), "%.0f", targetLow * 18.0f);
+  } else {
+    snprintf(lblStr, sizeof(lblStr), "%.1f", targetLow);
+  }
+  M5.Lcd.drawString(lblStr, gx0 - 3, ySafeLow);
+
 
   const long timeWindowSec = 7200; // 2 hours
   time_t tNow = ns->sensTime > 0 ? ns->sensTime : time(NULL);
 
   int x1h = gx0 + gW / 2;
-  for(int y = gy0 + 1; y < gy1; y += 5) {
+  for(int y = gy0 + 1; y < gy1; y += 4) {
     M5.Lcd.drawPixel(x1h, y, TFT_DARKGREY);
   }
   M5.Lcd.setTextDatum(BC_DATUM);
-  M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
   M5.Lcd.drawString("-1h", x1h, gy1 - 2);
   M5.Lcd.drawString("-2h", gx0 + 14, gy1 - 2);
   M5.Lcd.drawString("now", gx1 - 12, gy1 - 2);
