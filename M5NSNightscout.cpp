@@ -172,14 +172,19 @@ int readNightscout(tConfig *cfg, struct NSinfo *ns) {
 
         ns->sgvHistoryCount = 0;
         int nEntries = arr.size();
-        if (nEntries > MAX_SGV_HISTORY) nEntries = MAX_SGV_HISTORY;
-        for(int i = 0; i < nEntries; i++) {
+        for(int i = 0; i < nEntries && ns->sgvHistoryCount < MAX_SGV_HISTORY; i++) {
           if (JSONdoc[i].containsKey("sgv")) {
             float val = JSONdoc[i]["sgv"];
             val /= 18.0;
             long long raw_t = JSONdoc[i]["date"].as<long long>();
+            time_t entry_t = (time_t)(raw_t / 1000);
+            if (val <= 0 || entry_t <= 0) continue;
+            // Skip near-duplicate entries (< 35s apart) to eliminate LibreLinkUp dual-upload artifacts
+            if (ns->sgvHistoryCount > 0 && labs((long)(ns->sgvHistory[ns->sgvHistoryCount - 1].time - entry_t)) < 35) {
+              continue;
+            }
             ns->sgvHistory[ns->sgvHistoryCount].sgv = val;
-            ns->sgvHistory[ns->sgvHistoryCount].time = (time_t)(raw_t / 1000);
+            ns->sgvHistory[ns->sgvHistoryCount].time = entry_t;
             ns->sgvHistoryCount++;
           }
         }

@@ -97,7 +97,7 @@ struct tConfig {
   char wlanpass[10][64];
 } ;
 
-#define MAX_SGV_HISTORY 120
+#define MAX_SGV_HISTORY 180
 
 struct SGVEntry {
   float sgv = 0;   // in mmol/L

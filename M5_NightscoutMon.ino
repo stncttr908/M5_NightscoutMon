@@ -227,9 +227,9 @@ void setPageIconPos(int page) {
       icon_ypos[2] = 110-18+27;
       break;
     case PAGE_GRAPH:
-      icon_xpos[0] = 266;
-      icon_xpos[1] = 266+18;
-      icon_xpos[2] = 266+2*18;
+      icon_xpos[0] = 285; // Sneak blue refresh icon adjacent to battery at 302
+      icon_xpos[1] = 266;
+      icon_xpos[2] = 302;
       icon_ypos[0] = 2;
       icon_ypos[1] = 2;
       icon_ypos[2] = 2;
@@ -1173,12 +1173,12 @@ void drawGraphPage(struct NSinfo *ns) {
   M5.Lcd.drawString(sensSgvStr, 4, 2);
   int tw = M5.Lcd.textWidth(sensSgvStr);
 
-  int arrowCenterX = 4 + tw + 18;
+  int arrowCenterX = 4 + tw + 15;
   if(ns->arrowAngle != 180) {
-    drawArrow(arrowCenterX, 15, 6, ns->arrowAngle + 85, 18, 18, glColor);
+    drawArrow(arrowCenterX, 13, 4, ns->arrowAngle + 85, 12, 12, glColor);
   }
 
-  int deltaX = (ns->arrowAngle != 180) ? (arrowCenterX + 22) : (4 + tw + 10);
+  int deltaX = (ns->arrowAngle != 180) ? (arrowCenterX + 18) : (4 + tw + 10);
   M5.Lcd.setFreeFont(FSSB12);
   if(abs(ns->delta_mgdl) > 7)
     M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1317,36 +1317,52 @@ void drawGraphPage(struct NSinfo *ns) {
     int prevY = -1;
     time_t prevT = 0;
 
-    for(int i = ns->sgvHistoryCount - 1; i >= 0; i--) {
+    for(int i = 0; i < ns->sgvHistoryCount; i++) {
       float v = ns->sgvHistory[i].sgv;
       time_t t = ns->sgvHistory[i].time;
       if(v <= 0 || t <= 0) continue;
 
       long dt = (long)(tNow - t);
-      if(dt < 0 || dt > timeWindowSec) continue;
-
-      int px = gx1 - (int)(((float)dt / (float)timeWindowSec) * (float)gW);
-      int py = toY(v);
-
-      if(px < gx0) px = gx0;
-      if(px > gx1) px = gx1;
-      if(py < gy0) py = gy0;
-      if(py > gy1) py = gy1;
 
       uint16_t ptColor = TFT_GREEN;
       if(v < cfg.yellow_low || v > cfg.yellow_high) ptColor = TFT_YELLOW;
       if(v < cfg.red_low || v > cfg.red_high) ptColor = TFT_RED;
 
-      if(prevX >= 0 && (t - prevT) <= 900 && t >= prevT) {
-        M5.Lcd.drawLine(prevX, prevY, px, py, ptColor);
-        M5.Lcd.drawLine(prevX, prevY + 1, px, py + 1, ptColor);
+      if(dt <= timeWindowSec) {
+        int px = gx1 - (int)(((float)dt / (float)timeWindowSec) * (float)gW);
+        int py = toY(v);
+        if(px < gx0) px = gx0;
+        if(px > gx1) px = gx1;
+
+        if(prevX >= 0) {
+          if((prevT - t) <= 900 && prevT >= t) {
+            M5.Lcd.drawLine(prevX, prevY, px, py, ptColor);
+            M5.Lcd.drawLine(prevX, prevY + 1, px, py + 1, ptColor);
+          }
+        } else {
+          // Current reading point at the right end of the trendline
+          M5.Lcd.fillCircle(px, py, 3, ptColor);
+          M5.Lcd.fillCircle(px, py, 1, TFT_WHITE);
+        }
+
+        prevX = px;
+        prevY = py;
+        prevT = t;
+      } else {
+        // Point is past 2 hours: interpolate to exact left boundary (gx0)
+        if(prevX >= 0 && (prevT - t) <= 900 && prevT >= t && (prevT - t) > 0) {
+          float frac = (float)(timeWindowSec - (tNow - prevT)) / (float)(prevT - t);
+          if (frac >= 0.0f && frac <= 1.0f) {
+            int py = toY(v);
+            int edgeY = prevY + (int)((py - prevY) * frac);
+            if(edgeY < gy0) edgeY = gy0;
+            if(edgeY > gy1) edgeY = gy1;
+            M5.Lcd.drawLine(prevX, prevY, gx0, edgeY, ptColor);
+            M5.Lcd.drawLine(prevX, prevY + 1, gx0, edgeY + 1, ptColor);
+          }
+        }
+        break;
       }
-
-      M5.Lcd.fillCircle(px, py, 2, ptColor);
-
-      prevX = px;
-      prevY = py;
-      prevT = t;
     }
   }
 
