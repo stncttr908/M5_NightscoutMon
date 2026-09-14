@@ -1129,3 +1129,32 @@ void readConfiguration(const char *iniFilename, tConfig *cfg) {
   }
 
 }
+
+void populateLast10FromHistory(NSinfo *ns) {
+  if (!ns) return;
+  for (int i = 0; i < 10; i++) {
+    ns->last10sgv[i] = 0;
+  }
+  if (ns->sgvHistoryCount <= 0) return;
+
+  ns->last10sgv[0] = ns->sgvHistory[0].sgv;
+  time_t t0 = ns->sgvHistory[0].time;
+
+  for (int slot = 1; slot < 10; slot++) {
+    time_t targetTime = t0 - (slot * 300); // slot * 5 minutes ago
+    int bestIdx = -1;
+    long bestDiff = 1000000;
+    for (int j = 1; j < ns->sgvHistoryCount; j++) {
+      if (ns->sgvHistory[j].time <= 0) continue;
+      long diff = labs((long)(ns->sgvHistory[j].time - targetTime));
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIdx = j;
+      }
+    }
+    // Accept match if within 4 minutes (240s) of targetTime
+    if (bestIdx >= 0 && bestDiff <= 240) {
+      ns->last10sgv[slot] = ns->sgvHistory[bestIdx].sgv;
+    }
+  }
+}

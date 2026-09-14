@@ -173,7 +173,7 @@ int readDexcom(tConfig *cfg, struct NSinfo *ns) {
         return err;
     }
 
-    String url = String(baseUrl) + DEX_READINGS_PATH + "?sessionId=" + dexSessionId + "&minutes=1440&maxCount=10";
+    String url = String(baseUrl) + DEX_READINGS_PATH + "?sessionId=" + dexSessionId + "&minutes=1440&maxCount=" + String(MAX_SGV_HISTORY);
     HTTPClient http;
     http.begin(client, url);
     http.addHeader("Accept", "application/json");
@@ -233,9 +233,18 @@ int readDexcom(tConfig *cfg, struct NSinfo *ns) {
     ns->sensSgvMgDl = arr[0]["Value"];
     ns->sensSgv = ns->sensSgvMgDl / 18.0;
 
-    for (int i = 0; i < 10; i++) {
-      ns->last10sgv[i] = (i < (int)arr.size()) ? ((float)(int)arr[i]["Value"]) / 18.0 : 0;
+    ns->sgvHistoryCount = 0;
+    int nEntries = arr.size();
+    if (nEntries > MAX_SGV_HISTORY) nEntries = MAX_SGV_HISTORY;
+    for (int i = 0; i < nEntries; i++) {
+      const char* st = arr[i]["ST"] | "";
+      const char* p = strchr(st, '(');
+      uint64_t rt = p ? strtoull(p + 1, NULL, 10) : 0;
+      ns->sgvHistory[ns->sgvHistoryCount].sgv = ((float)(int)arr[i]["Value"]) / 18.0;
+      ns->sgvHistory[ns->sgvHistoryCount].time = (time_t)(rt / 1000);
+      ns->sgvHistoryCount++;
     }
+    populateLast10FromHistory(ns);
 
     if (arr.size() >= 2) {
       int v0 = arr[0]["Value"];

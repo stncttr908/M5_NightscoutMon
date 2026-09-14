@@ -67,10 +67,14 @@ int readNightscout(tConfig *cfg, struct NSinfo *ns) {
   is_https_Heroku = (strstr(NSurl, "https://") != NULL) && (strstr(NSurl, "herokuapp.com") != NULL);
   Serial.print("is_https_Heroku "); Serial.println(is_https_Heroku);
 
+  char countParam[32];
+  snprintf(countParam, sizeof(countParam), "count=%d", MAX_SGV_HISTORY);
   if(cfg->sgv_only) {
-    strlcat(NSurl, "/api/v1/entries.json?find[type][$eq]=sgv&count=10", sizeof(NSurl));
+    strlcat(NSurl, "/api/v1/entries.json?find[type][$eq]=sgv&", sizeof(NSurl));
+    strlcat(NSurl, countParam, sizeof(NSurl));
   } else {
-    strlcat(NSurl, "/api/v1/entries.json?count=10", sizeof(NSurl));
+    strlcat(NSurl, "/api/v1/entries.json?", sizeof(NSurl));
+    strlcat(NSurl, countParam, sizeof(NSurl));
   }
   if(cfg->token[0] != '\0') {
     strlcat(NSurl, "&token=", sizeof(NSurl));
@@ -125,7 +129,16 @@ int readNightscout(tConfig *cfg, struct NSinfo *ns) {
       }
 
       Serial.print("Free Heap = "); Serial.println(ESP.getFreeHeap());
-      DeserializationError JSONerr = deserializeJson(JSONdoc, json);
+      StaticJsonDocument<200> filter;
+      JsonObject filterItem = filter.createNestedObject();
+      filterItem["device"] = true;
+      filterItem["xDrip_raw"] = true;
+      filterItem["date"] = true;
+      filterItem["direction"] = true;
+      filterItem["trend"] = true;
+      filterItem["sgv"] = true;
+
+      DeserializationError JSONerr = deserializeJson(JSONdoc, json, DeserializationOption::Filter(filter));
       if(JSONerr) {
         Serial.printf("JSON DeserializationError %s\r\n", JSONerr.c_str());
       } else {
@@ -156,10 +169,21 @@ int readNightscout(tConfig *cfg, struct NSinfo *ns) {
           strlcpy(ns->sensDir, JSONdoc[sgvindex]["trend"] | "N/A", 32);
         }
         ns->sensSgv = JSONdoc[sgvindex]["sgv"];
-        for(int i = 0; i <= 9; i++) {
-          ns->last10sgv[i] = JSONdoc[i]["sgv"];
-          ns->last10sgv[i] /= 18.0;
+
+        ns->sgvHistoryCount = 0;
+        int nEntries = arr.size();
+        if (nEntries > MAX_SGV_HISTORY) nEntries = MAX_SGV_HISTORY;
+        for(int i = 0; i < nEntries; i++) {
+          if (JSONdoc[i].containsKey("sgv")) {
+            float val = JSONdoc[i]["sgv"];
+            val /= 18.0;
+            long long raw_t = JSONdoc[i]["date"].as<long long>();
+            ns->sgvHistory[ns->sgvHistoryCount].sgv = val;
+            ns->sgvHistory[ns->sgvHistoryCount].time = (time_t)(raw_t / 1000);
+            ns->sgvHistoryCount++;
+          }
         }
+        populateLast10FromHistory(ns);
         ns->sensSgvMgDl = ns->sensSgv;
         ns->sensSgv /= 18.0;
 

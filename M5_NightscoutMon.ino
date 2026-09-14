@@ -143,8 +143,9 @@ int rcnt = 4;
 
 int dispPage = 0;
 int lastDrawnPage = -1; // lets draw_page() tell a fresh page entry from its own 15s periodic redraw
-#define PAGE_ERRLOG 3
-#define PAGE_WEBQR  4
+#define PAGE_GRAPH  3
+#define PAGE_ERRLOG 4
+#define PAGE_WEBQR  5
 #define MAX_PAGE    PAGE_WEBQR
 int maxPage = MAX_PAGE;
 
@@ -224,6 +225,14 @@ void setPageIconPos(int page) {
       icon_ypos[0] = 110-18-9;
       icon_ypos[1] = 110-18+9;
       icon_ypos[2] = 110-18+27;
+      break;
+    case PAGE_GRAPH:
+      icon_xpos[0] = 266;
+      icon_xpos[1] = 266+18;
+      icon_xpos[2] = 266+2*18;
+      icon_ypos[0] = 2;
+      icon_ypos[1] = 2;
+      icon_ypos[2] = 2;
       break;
     default:
       icon_xpos[0] = 266;
@@ -1138,6 +1147,170 @@ void drawMiniGraph(struct NSinfo *ns){
   Serial.println();
 }
 
+void drawGraphPage(struct NSinfo *ns) {
+  // Clear display down to bottom info line
+  M5.Lcd.fillRect(0, 0, 320, 216, TFT_BLACK);
+
+  // --- 1. Header (y = 0..35) ---
+  uint16_t glColor = TFT_GREEN;
+  if(ns->sensSgv < cfg.yellow_low || ns->sensSgv > cfg.yellow_high) {
+    glColor = TFT_YELLOW;
+  }
+  if(ns->sensSgv < cfg.red_low || ns->sensSgv > cfg.red_high) {
+    glColor = TFT_RED;
+  }
+
+  char sensSgvStr[32];
+  if(cfg.show_mgdl) {
+    snprintf(sensSgvStr, sizeof(sensSgvStr), "%3.0f", ns->sensSgvMgDl);
+  } else {
+    snprintf(sensSgvStr, sizeof(sensSgvStr), "%4.1f", ns->sensSgv);
+  }
+
+  M5.Lcd.setTextDatum(TL_DATUM);
+  M5.Lcd.setTextColor(glColor, TFT_BLACK);
+  M5.Lcd.setFreeFont(FSSB18);
+  M5.Lcd.drawString(sensSgvStr, 4, 2);
+  int tw = M5.Lcd.textWidth(sensSgvStr);
+
+  if(ns->arrowAngle != 180) {
+    drawArrow(4 + tw + 18, 16, 6, ns->arrowAngle + 85, 20, 20, glColor);
+  }
+
+  M5.Lcd.setFreeFont(FSSB12);
+  if(abs(ns->delta_mgdl) > 7)
+    M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  else
+    M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Lcd.drawString(ns->delta_display, 4 + tw + 34, 6);
+
+  struct tm timeinfo;
+  int sensorDifSec = 0;
+  if(!getLocalTime(&timeinfo)) {
+    sensorDifSec = 24 * 3600;
+  } else {
+    sensorDifSec = difftime(mktime(&timeinfo), ns->sensTime);
+  }
+  int sensorDifMin = (sensorDifSec + 30) / 60;
+  char ageStr[16];
+  if(sensorDifMin > 99) {
+    strcpy(ageStr, "Err");
+  } else {
+    snprintf(ageStr, sizeof(ageStr), "%dm", sensorDifMin);
+  }
+  M5.Lcd.setTextColor((sensorDifMin > 15) ? TFT_RED : ((sensorDifMin > 5) ? TFT_WHITE : TFT_LIGHTGREY), TFT_BLACK);
+  M5.Lcd.drawString(ageStr, 212, 6);
+
+  drawBatteryStatus(icon_xpos[2], icon_ypos[2]);
+  drawLogWarningIcon();
+
+  // --- 2. Graph Canvas (y = 36..215) ---
+  const int gx0 = 28;
+  const int gx1 = 315;
+  const int gy0 = 38;
+  const int gy1 = 208;
+  const int gW = gx1 - gx0;
+  const int gH = gy1 - gy0;
+
+  float yMin = 3.0f;
+  float yMax = 15.0f;
+  for(int i = 0; i < ns->sgvHistoryCount; i++) {
+    float val = ns->sgvHistory[i].sgv;
+    time_t ep = ns->sgvHistory[i].time;
+    if(val > 0 && ep > 0) {
+      if(val > yMax) yMax = val + 1.0f;
+      if(val < yMin) yMin = val - 0.5f;
+    }
+  }
+  if(yMax <= yMin) yMax = yMin + 1.0f;
+
+  auto toY = [&](float v) -> int {
+    if(v < yMin) v = yMin;
+    if(v > yMax) v = yMax;
+    return gy1 - (int)(((v - yMin) / (yMax - yMin)) * (float)gH);
+  };
+
+  int yYellowHigh = toY(cfg.yellow_high);
+  int yYellowLow  = toY(cfg.yellow_low);
+
+  for(int x = gx0; x <= gx1; x += 5) {
+    M5.Lcd.drawPixel(x, yYellowHigh, TFT_DARKGREY);
+    M5.Lcd.drawPixel(x, yYellowLow,  TFT_DARKGREY);
+  }
+  M5.Lcd.drawRect(gx0, gy0, gW + 1, gH + 1, TFT_DARKGREY);
+
+  M5.Lcd.setTextDatum(MR_DATUM);
+  M5.Lcd.setFreeFont(FSS9);
+  M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  char yLabel[16];
+  if(cfg.show_mgdl) {
+    snprintf(yLabel, sizeof(yLabel), "%.0f", cfg.yellow_high * 18.0f);
+    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowHigh);
+    snprintf(yLabel, sizeof(yLabel), "%.0f", cfg.yellow_low * 18.0f);
+    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowLow);
+  } else {
+    snprintf(yLabel, sizeof(yLabel), "%.1f", cfg.yellow_high);
+    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowHigh);
+    snprintf(yLabel, sizeof(yLabel), "%.1f", cfg.yellow_low);
+    M5.Lcd.drawString(yLabel, gx0 - 2, yYellowLow);
+  }
+
+  const long timeWindowSec = 7200; // 2 hours
+  time_t tNow = ns->sensTime > 0 ? ns->sensTime : time(NULL);
+
+  int x1h = gx0 + gW / 2;
+  for(int y = gy0 + 1; y < gy1; y += 5) {
+    M5.Lcd.drawPixel(x1h, y, TFT_DARKGREY);
+  }
+  M5.Lcd.setTextDatum(BC_DATUM);
+  M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  M5.Lcd.drawString("-1h", x1h, gy1 - 2);
+  M5.Lcd.drawString("-2h", gx0 + 14, gy1 - 2);
+  M5.Lcd.drawString("now", gx1 - 12, gy1 - 2);
+
+  if(ns->sgvHistoryCount > 0) {
+    int prevX = -1;
+    int prevY = -1;
+    time_t prevT = 0;
+
+    for(int i = ns->sgvHistoryCount - 1; i >= 0; i--) {
+      float v = ns->sgvHistory[i].sgv;
+      time_t t = ns->sgvHistory[i].time;
+      if(v <= 0 || t <= 0) continue;
+
+      long dt = (long)(tNow - t);
+      if(dt < 0 || dt > timeWindowSec) continue;
+
+      int px = gx1 - (int)(((float)dt / (float)timeWindowSec) * (float)gW);
+      int py = toY(v);
+
+      if(px < gx0) px = gx0;
+      if(px > gx1) px = gx1;
+      if(py < gy0) py = gy0;
+      if(py > gy1) py = gy1;
+
+      uint16_t ptColor = TFT_GREEN;
+      if(v < cfg.yellow_low || v > cfg.yellow_high) ptColor = TFT_YELLOW;
+      if(v < cfg.red_low || v > cfg.red_high) ptColor = TFT_RED;
+
+      if(prevX >= 0 && (t - prevT) <= 900 && t >= prevT) {
+        M5.Lcd.drawLine(prevX, prevY, px, py, ptColor);
+        M5.Lcd.drawLine(prevX, prevY + 1, px, py + 1, ptColor);
+      }
+
+      M5.Lcd.fillCircle(px, py, 2, ptColor);
+
+      prevX = px;
+      prevY = py;
+      prevT = t;
+    }
+  }
+
+  // --- 3. Footer ---
+  handleAlarmsInfoLine(ns);
+  drawLogWarningIcon();
+}
+
 // Dispatches to the active glucose data source, selected by cfg.data_source.
 int readDataSource() {
   switch(cfg.data_source) {
@@ -1993,7 +2166,12 @@ void draw_page() {
       drawLogWarningIcon();
     }
     break;
-    
+
+    case PAGE_GRAPH: {
+      drawGraphPage(&ns);
+    }
+    break;
+
     case PAGE_ERRLOG: {
       // display error log
       char tmpStr[64];

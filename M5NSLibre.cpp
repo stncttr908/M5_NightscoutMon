@@ -371,11 +371,21 @@ int readLibre(tConfig *cfg, struct NSinfo *ns) {
         prevIdx--; // the newest graph point duplicates the current reading
     }
 
-    ns->last10sgv[0] = valueMgDl / 18.0;
-    for (int i = 1; i < 10; i++) {
-      int gi = prevIdx - (i - 1);
-      ns->last10sgv[i] = (gi >= 0) ? ((float)(int)(graphArr[gi]["ValueInMgPerDl"] | 0)) / 18.0 : 0;
+    ns->sgvHistoryCount = 0;
+    ns->sgvHistory[0].sgv = valueMgDl / 18.0;
+    ns->sgvHistory[0].time = ns->sensTime;
+    ns->sgvHistoryCount = 1;
+
+    for (int gi = prevIdx; gi >= 0 && ns->sgvHistoryCount < MAX_SGV_HISTORY; gi--) {
+      float val = ((float)(int)(graphArr[gi]["ValueInMgPerDl"] | 0)) / 18.0;
+      time_t ep = parseLibreTimestamp(graphArr[gi]["FactoryTimestamp"] | "");
+      if (val > 0 && ep > 0) {
+        ns->sgvHistory[ns->sgvHistoryCount].sgv = val;
+        ns->sgvHistory[ns->sgvHistoryCount].time = ep;
+        ns->sgvHistoryCount++;
+      }
     }
+    populateLast10FromHistory(ns);
 
     if (prevIdx >= 0) {
       float prevMgDl = graphArr[prevIdx]["ValueInMgPerDl"] | 0;

@@ -290,16 +290,17 @@ void handleRoot() {
   rowEdit(message, "User name", cfg.userName, "userName", "di");
   rowSeg(message, "Display units", cfg.show_mgdl, "show_mgdl", "di", "mg/dL", "mmol/L");
   {
-    const char* pageOpts[5] = {
+    const char* pageOpts[6] = {
       "0: Main Dashboard",
       "1: Large Font View",
       "2: Clock & Environment",
-      "3: Error Log",
-      "4: Web Config QR"
+      "3: Graph View",
+      "4: Error Log",
+      "5: Web Config QR"
     };
-    int pageVals[5] = {0, 1, 2, 3, 4};
+    int pageVals[6] = {0, 1, 2, 3, 4, 5};
     int n = maxPage + 1;
-    if (n > 5) n = 5;
+    if (n > 6) n = 6;
     rowSelect(message, "Default page", "default_page", "di", pageOpts, pageVals, n, cfg.default_page);
   }
   rowSeg(message, "Show time", cfg.show_current_time, "show_current_time", "di", "current time", "last data");

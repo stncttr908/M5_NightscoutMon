@@ -97,6 +97,13 @@ struct tConfig {
   char wlanpass[10][64];
 } ;
 
+#define MAX_SGV_HISTORY 120
+
+struct SGVEntry {
+  float sgv = 0;   // in mmol/L
+  time_t time = 0; // epoch seconds
+};
+
 struct NSinfo {
   char sensDev[64];
   uint64_t rawtime = 0;
@@ -106,6 +113,8 @@ struct NSinfo {
   float sensSgvMgDl = 0;
   float sensSgv = 0;
   float last10sgv[10];
+  SGVEntry sgvHistory[MAX_SGV_HISTORY];
+  int sgvHistoryCount = 0;
   bool is_xDrip = 0;
   int arrowAngle = 180;
   float iob = 0;
@@ -135,5 +144,6 @@ void readConfigFromFlash(tConfig *cfg);
 void saveConfigToFlash(tConfig *cfg);
 void readConfiguration(const char *iniFilename, tConfig *cfg);
 void applyDefaultDeviceName(tConfig *cfg);
+void populateLast10FromHistory(NSinfo *ns);
 
 #endif
